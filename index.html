@@ -1,20 +1,15 @@
-<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-
-<div class="nav-item" onclick="document.getElementById('csvInput').click()">
-    <span>📥 Import Excel/CSV</span>
-</div>
-<input type="file" id="csvInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>LubriPlan</title>
+  <title>LubriPlan — Graissage & Vidange</title>
   <link rel="stylesheet" href="style.css"/>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 </head>
 <body>
 
+<!-- ═══ LOGIN ═══ -->
 <div id="loginScreen">
   <div class="login-card">
     <div class="login-top">
@@ -33,33 +28,51 @@
       </div>
       <button class="login-btn" onclick="doLogin()">Se connecter</button>
       <div class="login-err" id="loginErr"></div>
-      <div class="login-hint">Admin : admin / admin123 &nbsp;|&nbsp; Tech : ahmed.b / tech1234</div>
     </div>
   </div>
 </div>
 
+<!-- ═══ APP ═══ -->
 <div id="app">
+
+  <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-logo">
       <span class="logo-icon">⚙</span>
-      <div><div class="logo-title">LubriPlan</div><div class="logo-sub">Gestion maintenance</div></div>
+      <div>
+        <div class="logo-title">LubriPlan</div>
+        <div class="logo-sub">Gestion maintenance</div>
+      </div>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">SUIVI</div>
-      <div class="nav-item active" id="nav_liste" onclick="switchView('liste')"><span class="nav-icon">📋</span><span>Tâches</span></div>
-      <div class="nav-item" id="nav_planning" onclick="switchView('planning')"><span class="nav-icon">📅</span><span>Planning</span></div>
-      <div class="nav-item" id="nav_techniciens" onclick="switchView('techniciens')"><span class="nav-icon">👷</span><span>Techniciens</span></div>
-      <div class="nav-item" id="nav_historique" onclick="switchView('historique')"><span class="nav-icon">🕐</span><span>Historique</span></div>
-      <div class="nav-item" id="nav_utilisateurs" onclick="switchView('utilisateurs')">
-  <span class="nav-icon">👥</span><span>Utilisateurs</span>
-</div>
+      <div class="nav-item active" id="nav_liste" onclick="switchView('liste')">
+        <span class="nav-icon">📋</span><span>Tâches</span>
+      </div>
+      <div class="nav-item" id="nav_planning" onclick="switchView('planning')">
+        <span class="nav-icon">📅</span><span>Planning</span>
+      </div>
+      <div class="nav-item" id="nav_techniciens" onclick="switchView('techniciens')">
+        <span class="nav-icon">👷</span><span>Techniciens</span>
+      </div>
+      <div class="nav-item" id="nav_historique" onclick="switchView('historique')">
+        <span class="nav-icon">🕐</span><span>Historique</span>
+      </div>
       <div class="nav-section">DONNÉES</div>
-      <div class="nav-item" onclick="exportCSV()"><span class="nav-icon">📤</span><span>Export CSV</span></div>
-      <div class="nav-item" onclick="document.getElementById('csvInput').click()"><span class="nav-icon">📥</span><span>Import CSV</span></div>
-      <div class="nav-item" onclick="window.print()"><span class="nav-icon">🖨</span><span>Imprimer</span></div>
+      <div class="nav-item" onclick="exportCSV()">
+        <span class="nav-icon">📤</span><span>Export CSV</span>
+      </div>
+      <div class="nav-item" onclick="document.getElementById('csvInput').click()">
+        <span class="nav-icon">📥</span><span>Import CSV</span>
+      </div>
+      <div class="nav-item" onclick="window.print()">
+        <span class="nav-icon">🖨</span><span>Imprimer</span>
+      </div>
     </nav>
     <div class="sidebar-footer">v1.0 — 2025</div>
   </aside>
+
+  <!-- MAIN -->
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
@@ -79,63 +92,153 @@
   </div>
 </div>
 
-<!-- MODAL TÂCHE -->
+<!-- ═══ MODAL TÂCHE ═══ -->
 <div class="overlay" id="taskModal">
   <div class="modal">
-    <div class="modal-header"><h2 id="taskModalTitle">Nouvelle tâche</h2><button class="btn-close" onclick="closeTaskModal()">✕</button></div>
+    <div class="modal-header">
+      <h2 id="taskModalTitle">Nouvelle tâche</h2>
+      <button class="btn-close" onclick="closeTaskModal()">✕</button>
+    </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-row full"><label>Composant / Équipement *</label><input type="text" id="fComp" placeholder="ex: Pompe centrifuge P-101"/></div>
-        <div class="form-row"><label>Criticité *</label><select id="fCrit"><option value="1">1 — Critique</option><option value="2">2 — Haute</option><option value="3">3 — Moyenne</option><option value="4">4 — Faible</option></select></div>
-        <div class="form-row"><label>Type de produit *</label><select id="fType" onchange="updProdLbl()"><option value="Huile">Huile de vidange</option><option value="Graisse">Graisse</option></select></div>
-        <div class="form-row"><label id="prodLbl">Référence huile *</label><input type="text" id="fProd" placeholder="ex: Shell Omala S2 GX 220"/></div>
-        <div class="form-row"><label>Quantité</label><input type="text" id="fQty" placeholder="ex: 4 L ou 200 g"/></div>
+        <div class="form-row full">
+          <label>Composant / Équipement *</label>
+          <input type="text" id="fComp" placeholder="ex: Pompe centrifuge P-101"/>
+        </div>
+        <div class="form-row">
+          <label>Criticité *</label>
+          <select id="fCrit">
+            <option value="1">1 — Critique</option>
+            <option value="2">2 — Haute</option>
+            <option value="3">3 — Moyenne</option>
+            <option value="4">4 — Faible</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Type de produit *</label>
+          <select id="fType" onchange="updProdLbl()">
+            <option value="Huile">Huile de vidange</option>
+            <option value="Graisse">Graisse</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label id="prodLbl">Référence huile *</label>
+          <input type="text" id="fProd" placeholder="ex: Shell Omala S2 GX 220"/>
+        </div>
+        <div class="form-row">
+          <label>Quantité</label>
+          <input type="text" id="fQty" placeholder="ex: 4 L ou 200 g"/>
+        </div>
         <div class="form-section">Planification</div>
-        <div class="form-row"><label>Fréquence *</label><select id="fFreq"><option value="Hebdomadaire">Hebdomadaire</option><option value="Mensuelle">Mensuelle</option><option value="Bimestrielle">Bimestrielle (2 mois)</option><option value="Trimestrielle">Trimestrielle</option><option value="Semestrielle">Semestrielle</option><option value="Annuelle">Annuelle</option></select></div>
-        <div class="form-row"><label>Prochaine échéance *</label><input type="date" id="fDate"/></div>
-        <div class="form-row"><label>Durée estimée</label><input type="text" id="fDur" placeholder="ex: 30 min"/></div>
-        <div class="form-row"><label>Technicien responsable</label><select id="fTech"></select></div>
+        <div class="form-row">
+          <label>Fréquence *</label>
+          <select id="fFreq">
+            <option value="Hebdomadaire">Hebdomadaire</option>
+            <option value="Mensuelle">Mensuelle</option>
+            <option value="Bimestrielle">Bimestrielle (2 mois)</option>
+            <option value="Trimestrielle">Trimestrielle</option>
+            <option value="Semestrielle">Semestrielle</option>
+            <option value="Annuelle">Annuelle</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Prochaine échéance *</label>
+          <input type="date" id="fDate"/>
+        </div>
+        <div class="form-row">
+          <label>Durée estimée</label>
+          <input type="text" id="fDur" placeholder="ex: 30 min"/>
+        </div>
+        <div class="form-row">
+          <label>Technicien responsable</label>
+          <select id="fTech"></select>
+        </div>
         <div class="form-section">Informations complémentaires</div>
-        <div class="form-row full"><label>Localisation</label><input type="text" id="fLoc" placeholder="ex: Atelier 2 — Zone B"/></div>
-        <div class="form-row full"><label>Remarques</label><textarea id="fNote" placeholder="Instructions particulières..."></textarea></div>
+        <div class="form-row full">
+          <label>Localisation</label>
+          <input type="text" id="fLoc" placeholder="ex: Atelier 2 — Zone B"/>
+        </div>
+        <div class="form-row full">
+          <label>Remarques</label>
+          <textarea id="fNote" placeholder="Instructions particulières..."></textarea>
+        </div>
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-s" onclick="closeTaskModal()">Annuler</button><button class="btn btn-p" onclick="saveTask()">Enregistrer</button></div>
+    <div class="modal-footer">
+      <button class="btn btn-s" onclick="closeTaskModal()">Annuler</button>
+      <button class="btn btn-p" onclick="saveTask()">Enregistrer</button>
+    </div>
   </div>
 </div>
 
-<!-- MODAL UTILISATEUR -->
+<!-- ═══ MODAL UTILISATEUR ═══ -->
 <div class="overlay" id="userModal">
   <div class="modal modal-sm">
-    <div class="modal-header"><h2 id="userModalTitle">Nouvel utilisateur</h2><button class="btn-close" onclick="closeUserModal()">✕</button></div>
+    <div class="modal-header">
+      <h2 id="userModalTitle">Nouvel utilisateur</h2>
+      <button class="btn-close" onclick="closeUserModal()">✕</button>
+    </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-row full"><label>Nom complet *</label><input type="text" id="uName" placeholder="ex: Ahmed Bensalem"/></div>
-        <div class="form-row full"><label>Identifiant (login) *</label><input type="text" id="uLogin" placeholder="ex: ahmed.b"/></div>
-        <div class="form-row"><label>Rôle *</label><select id="uRole"><option value="admin">Administrateur</option><option value="tech">Technicien</option></select></div>
-        <div class="form-row"><label>Spécialité</label><input type="text" id="uSpec" placeholder="ex: Mécanique"/></div>
-        <div class="form-row full"><label id="pwdLbl">Mot de passe *</label><input type="password" id="uPwd" placeholder="Min. 4 caractères"/></div>
-        <div class="form-row full" id="uPwd2Row"><label>Confirmer le mot de passe</label><input type="password" id="uPwd2" placeholder="Retaper le mot de passe"/></div>
+        <div class="form-row full">
+          <label>Nom complet *</label>
+          <input type="text" id="uName" placeholder="ex: Ahmed Bensalem"/>
+        </div>
+        <div class="form-row full">
+          <label>Identifiant (login) *</label>
+          <input type="text" id="uLogin" placeholder="ex: ahmed.b"/>
+        </div>
+        <div class="form-row">
+          <label>Rôle *</label>
+          <select id="uRole">
+            <option value="admin">Administrateur</option>
+            <option value="tech">Technicien</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Spécialité</label>
+          <input type="text" id="uSpec" placeholder="ex: Mécanique"/>
+        </div>
+        <div class="form-row full">
+          <label id="pwdLbl">Mot de passe *</label>
+          <input type="password" id="uPwd" placeholder="Min. 4 caractères"/>
+        </div>
+        <div class="form-row full" id="uPwd2Row">
+          <label>Confirmer le mot de passe</label>
+          <input type="password" id="uPwd2" placeholder="Retaper le mot de passe"/>
+        </div>
       </div>
     </div>
-    <div class="modal-footer"><button class="btn btn-s" onclick="closeUserModal()">Annuler</button><button class="btn btn-p" onclick="saveUser()">Enregistrer</button></div>
+    <div class="modal-footer">
+      <button class="btn btn-s" onclick="closeUserModal()">Annuler</button>
+      <button class="btn btn-p" onclick="saveUser()">Enregistrer</button>
+    </div>
   </div>
 </div>
 
-<!-- MODAL CONFIRMATION -->
+<!-- ═══ MODAL CONFIRMATION ═══ -->
 <div class="overlay" id="confirmModal">
   <div class="modal modal-sm">
-    <div class="modal-header"><h2 id="cfTitle">Confirmation</h2><button class="btn-close" onclick="closeCf()">✕</button></div>
+    <div class="modal-header">
+      <h2 id="cfTitle">Confirmation</h2>
+      <button class="btn-close" onclick="closeCf()">✕</button>
+    </div>
     <div class="modal-body" id="cfBody" style="font-size:14px;color:#5a5750;line-height:1.6"></div>
-    <div class="modal-footer"><button class="btn btn-s" onclick="closeCf()">Annuler</button><button class="btn btn-d" id="cfBtn">Confirmer</button></div>
+    <div class="modal-footer">
+      <button class="btn btn-s" onclick="closeCf()">Annuler</button>
+      <button class="btn btn-d" id="cfBtn">Confirmer</button>
+    </div>
   </div>
 </div>
 
-<!-- PANNEAU DETAIL -->
+<!-- ═══ PANNEAU DETAIL ═══ -->
 <div class="dp-overlay" id="dpOverlay" onclick="closeDp()"></div>
 <div class="dp-panel" id="dpPanel">
   <div class="dp-header">
-    <div><div class="dp-title" id="dp-t"></div><div class="dp-sub" id="dp-s"></div></div>
+    <div>
+      <div class="dp-title" id="dp-t"></div>
+      <div class="dp-sub" id="dp-s"></div>
+    </div>
     <button class="btn-close" onclick="closeDp()">✕</button>
   </div>
   <div class="dp-body" id="dp-b"></div>
@@ -144,7 +247,6 @@
 
 <div class="toast-container" id="toastC"></div>
 <input type="file" id="csvInput" accept=".csv" style="display:none" onchange="importCSV(event)"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
