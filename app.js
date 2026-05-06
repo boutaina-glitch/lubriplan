@@ -33,6 +33,8 @@ function defaultTasks() {
 
 const LS_TASKS = 'lubriplan_tasks';
 const LS_USERS = 'lubriplan_users';
+const LS_TASKS = 'lubriplan_tasks';
+const LS_USERS = 'lubriplan_users';
 
 function loadData() {
   const savedUsers = localStorage.getItem(LS_USERS);
