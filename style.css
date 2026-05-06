@@ -1,4 +1,4 @@
-/* ════════════════════════════════════════
+* ════════════════════════════════════════
    VARIABLES & RESET
 ════════════════════════════════════════ */
 :root {
@@ -547,7 +547,7 @@ input[type="checkbox"]:disabled { opacity: .35; cursor: not-allowed; }
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(10,15,25,.35);
+  background: rgba(60, 65, 74, 0.35);
   z-index: 150;
 }
 .dp-overlay.open { display: block; }
