@@ -1,3 +1,13 @@
+// ══════════════════════════════════════════════════════
+//  LubriPlan — app.js
+//  ✅ localStorage : toutes les modifications sauvegardées
+//  ✅ Import Excel (.xlsx) et CSV
+//  ✅ Gestion utilisateurs complète
+// ══════════════════════════════════════════════════════
+
+const LS_TASKS = 'lubriplan_tasks';
+const LS_USERS = 'lubriplan_users';
+
 const FREQ_M   = { Hebdomadaire:.25, Mensuelle:1, Bimestrielle:2, Trimestrielle:3, Semestrielle:6, Annuelle:12 };
 const MONTHS_S = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
@@ -7,6 +17,7 @@ let sortCol = 'crit', sortAsc = true;
 let calYear = new Date().getFullYear();
 let cfCb = null, currentView = 'liste';
 
+// ── DONNÉES PAR DÉFAUT ──────────────────────────────────
 function defaultUsers() {
   return [
     { id:1, name:'Administrateur',  login:'admin',     pwd:'admin123', role:'admin', spec:'Gestion',       active:true },
@@ -31,37 +42,41 @@ function defaultTasks() {
   ];
 }
 
-const LS_TASKS = 'lubriplan_tasks';
-const LS_USERS = 'lubriplan_users';
-const LS_TASKS = 'lubriplan_tasks';
-const LS_USERS = 'lubriplan_users';
-
+// ── SAUVEGARDE localStorage ─────────────────────────────
 function loadData() {
-  const savedUsers = localStorage.getItem(LS_USERS);
-  const savedTasks = localStorage.getItem(LS_TASKS);
-  users = savedUsers ? JSON.parse(savedUsers) : defaultUsers();
-  tasks = savedTasks ? JSON.parse(savedTasks) : defaultTasks();
+  try {
+    const savedUsers = localStorage.getItem(LS_USERS);
+    const savedTasks = localStorage.getItem(LS_TASKS);
+    users = savedUsers ? JSON.parse(savedUsers) : defaultUsers();
+    tasks = savedTasks ? JSON.parse(savedTasks) : defaultTasks();
+  } catch(e) {
+    users = defaultUsers();
+    tasks = defaultTasks();
+  }
 }
 
 function saveUsers() {
-  localStorage.setItem(LS_USERS, JSON.stringify(users));
+  try { localStorage.setItem(LS_USERS, JSON.stringify(users)); } catch(e) {}
 }
 
 function saveTasks() {
-  localStorage.setItem(LS_TASKS, JSON.stringify(tasks));
+  try { localStorage.setItem(LS_TASKS, JSON.stringify(tasks)); } catch(e) {}
 }
 
 function resetAllData() {
-  localStorage.removeItem(LS_TASKS);
-  localStorage.removeItem(LS_USERS);
-  loadData();
-  toast('Données réinitialisées');
-  render();
+  showCf('Réinitialiser toutes les données', 'Supprimer toutes les tâches et revenir aux données par défaut ?', () => {
+    localStorage.removeItem(LS_TASKS);
+    localStorage.removeItem(LS_USERS);
+    loadData();
+    toast('Données réinitialisées');
+    render();
+  });
 }
-const nextTaskId = () => tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;
-const nextUserId = () => users.reduce((m,u)=>Math.max(m,u.id),0)+1;
 
-/* AUTH */
+const nextTaskId = () => tasks.reduce((m,t) => Math.max(m,t.id), 0) + 1;
+const nextUserId = () => users.reduce((m,u) => Math.max(m,u.id), 0) + 1;
+
+// ── AUTH ────────────────────────────────────────────────
 function doLogin() {
   const loginVal = document.getElementById('loginUser').value.trim();
   const pwd      = document.getElementById('loginPwd').value;
@@ -95,78 +110,83 @@ function doLogout() {
 
 const isAdmin = () => currentUser && currentUser.role === 'admin';
 
-/* NAVIGATION */
+// ── NAVIGATION ───────────────────────────────────────────
 function switchView(v) {
   currentView = v; closeDp();
   ['liste','planning','techniciens','historique','utilisateurs'].forEach(id => {
-    const el = document.getElementById('nav_'+id); if(el) el.classList.toggle('active', id===v);
+    const el = document.getElementById('nav_'+id);
+    if (el) el.classList.toggle('active', id === v);
   });
   const titles = { liste:'Planning des tâches', planning:'Planning annuel', techniciens:'Vue par technicien', historique:'Historique des interventions', utilisateurs:'Gestion des utilisateurs' };
   const subs   = { liste:'Triées par criticité', planning:'Calendrier mensuel', techniciens:'Charge de travail', historique:'Interventions effectuées', utilisateurs:'Comptes et rôles' };
-  document.getElementById('pageTitle').textContent = titles[v]||v;
-  document.getElementById('pageSub').textContent   = subs[v]||'';
+  document.getElementById('pageTitle').textContent = titles[v] || v;
+  document.getElementById('pageSub').textContent   = subs[v]  || '';
   render();
 }
 
+// ── RENDER ───────────────────────────────────────────────
 function render() {
   const c = document.getElementById('content');
-  if      (currentView==='liste')        c.innerHTML = buildListView();
-  else if (currentView==='planning')     c.innerHTML = buildCalView();
-  else if (currentView==='techniciens')  c.innerHTML = buildTechView();
-  else if (currentView==='historique')   c.innerHTML = buildHistView();
-  else if (currentView==='utilisateurs') c.innerHTML = buildUserView();
+  if      (currentView === 'liste')        c.innerHTML = buildListView();
+  else if (currentView === 'planning')     c.innerHTML = buildCalView();
+  else if (currentView === 'techniciens')  c.innerHTML = buildTechView();
+  else if (currentView === 'historique')   c.innerHTML = buildHistView();
+  else if (currentView === 'utilisateurs') c.innerHTML = buildUserView();
 }
 
-/* HELPERS */
-function fmtD(d)  { if(!d) return'—'; const p=d.split('-'); return`${p[2]}/${p[1]}/${p[0]}`; }
+// ── HELPERS ──────────────────────────────────────────────
+function fmtD(d)  { if (!d) return '—'; const p = d.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; }
 function today()  { return new Date().toISOString().split('T')[0]; }
 function esc(s)   { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function initials(n) { return String(n||'').split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2); }
-function getTechName(id) { const u=users.find(x=>x.id===id); return u?u.name:'—'; }
-function getTechOptions(selId) { return users.filter(u=>u.role==='tech'&&u.active).map(u=>`<option value="${u.id}"${u.id===selId?' selected':''}>${u.name}</option>`).join(''); }
+function getTechName(id) { const u = users.find(x => x.id === id); return u ? u.name : '—'; }
+function getTechOptions(selId) {
+  return users.filter(u => u.role==='tech' && u.active)
+    .map(u => `<option value="${u.id}"${u.id===selId?' selected':''}>${u.name}</option>`).join('');
+}
 function getStatus(t) {
-  if(t.done) return'done';
-  const d=new Date(t.date), n=new Date(); n.setHours(0,0,0,0);
-  const diff=(d-n)/86400000;
-  if(diff<0) return'late'; if(diff<=14) return'soon'; return'pending';
+  if (t.done) return 'done';
+  const d = new Date(t.date), n = new Date(); n.setHours(0,0,0,0);
+  const diff = (d - n) / 86400000;
+  if (diff < 0) return 'late'; if (diff <= 14) return 'soon'; return 'pending';
 }
 const sLabel = s => ({done:'Effectué',late:'En retard',soon:'Bientôt',pending:'Planifié'})[s];
 const sClass = s => ({done:'s-done',late:'s-late',soon:'s-soon',pending:'s-pend'})[s];
-const cLabel = c => ({1:'Critique',2:'Haute',3:'Moyenne',4:'Faible'})[c]||c;
-const cClass = c => 'c'+c;
-const tClass = t => t==='Huile'?'t-oil':'t-grease';
+const cLabel = c => ({1:'Critique',2:'Haute',3:'Moyenne',4:'Faible'})[c] || c;
+const cClass = c => 'c' + c;
+const tClass = t => t === 'Huile' ? 't-oil' : 't-grease';
 
 function getStats() {
-  const list=isAdmin()?tasks:tasks.filter(t=>t.techId===currentUser.id);
-  const total=list.length, done=list.filter(t=>t.done).length;
-  const late=list.filter(t=>getStatus(t)==='late').length;
-  const soon=list.filter(t=>getStatus(t)==='soon').length;
-  const crit1=list.filter(t=>t.crit===1).length;
-  return { total, done, late, soon, crit1, pct:total?Math.round(done/total*100):0 };
+  const list  = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
+  const total = list.length, done = list.filter(t=>t.done).length;
+  const late  = list.filter(t=>getStatus(t)==='late').length;
+  const soon  = list.filter(t=>getStatus(t)==='soon').length;
+  const crit1 = list.filter(t=>t.crit===1).length;
+  return { total, done, late, soon, crit1, pct: total ? Math.round(done/total*100) : 0 };
 }
 
 function getFiltered() {
-  const fc=document.getElementById('fltCrit')?.value||'';
-  const ft=document.getElementById('fltType')?.value||'';
-  const fth=document.getElementById('fltTech')?.value||'';
-  const fs=document.getElementById('fltStat')?.value||'';
-  const q=(document.getElementById('srch')?.value||'').toLowerCase();
-  let list=isAdmin()?tasks:tasks.filter(t=>t.techId===currentUser.id);
+  const fc  = document.getElementById('fltCrit')?.value || '';
+  const ft  = document.getElementById('fltType')?.value || '';
+  const fth = document.getElementById('fltTech')?.value || '';
+  const fs  = document.getElementById('fltStat')?.value || '';
+  const q   = (document.getElementById('srch')?.value || '').toLowerCase();
+  let list  = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
   return list.filter(t => {
-    const s=getStatus(t);
+    const s = getStatus(t);
     return (!fc||t.crit==fc)&&(!ft||t.type===ft)&&(!fth||t.techId==fth)&&(!fs||s===fs)
       &&(!q||t.comp.toLowerCase().includes(q)||getTechName(t.techId).toLowerCase().includes(q)||t.prod.toLowerCase().includes(q));
   }).sort((a,b) => {
     let va=a[sortCol], vb=b[sortCol];
-    if(['crit','id'].includes(sortCol)){va=+va;vb=+vb;}
-    if(sortCol==='date'){va=new Date(va);vb=new Date(vb);}
-    if(va<vb) return sortAsc?-1:1; if(va>vb) return sortAsc?1:-1; return a.crit-b.crit;
+    if (['crit','id'].includes(sortCol)) { va=+va; vb=+vb; }
+    if (sortCol==='date') { va=new Date(va); vb=new Date(vb); }
+    if (va<vb) return sortAsc?-1:1; if (va>vb) return sortAsc?1:-1; return a.crit-b.crit;
   });
 }
 
-function srt(col) { if(sortCol===col) sortAsc=!sortAsc; else{sortCol=col;sortAsc=true;} render(); }
+function srt(col) { if (sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sortAsc=true; } render(); }
 
-/* LIST VIEW */
+// ── LIST VIEW ────────────────────────────────────────────
 function buildListView() {
   const s=getStats(), all=getFiltered(), techs=users.filter(u=>u.role==='tech'&&u.active);
   const statsHTML=`<div class="stats-grid">
@@ -179,7 +199,7 @@ function buildListView() {
   const adminBtns=isAdmin()?`<div class="ctrl-actions">
     <button class="btn btn-s btn-sm" onclick="resetDone()">↺ Réinitialiser</button>
     <button class="btn btn-s btn-sm" onclick="exportCSV()">📤 Export</button>
-    <button class="btn btn-s btn-sm" onclick="document.getElementById('csvInput').click()">📥 Import</button>
+    <button class="btn btn-s btn-sm" onclick="document.getElementById('fileInput').click()">📥 Import</button>
     <button class="btn btn-p" onclick="openTaskModal()">+ Nouvelle tâche</button>
   </div>`:'';
   const techFilter=isAdmin()?`<select id="fltTech" onchange="render()"><option value="">Tous techniciens</option>${techs.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>`:'';
@@ -193,7 +213,7 @@ function buildListView() {
   </div>`;
   const th=(k,l)=>`<th class="${sortCol===k?'sorted':''}" onclick="srt('${k}')">${l}${sortCol===k?' '+(sortAsc?'↑':'↓'):''}</th>`;
   const theadHTML=`${th('comp','Composant')} ${th('crit','Criticité')} ${th('type','Type')} ${th('prod','Produit')} ${th('freq','Fréquence')} ${isAdmin()?th('techId','Technicien'):''} ${th('date','Échéance')} <th>Statut</th> <th style="text-align:center">Fait</th> ${isAdmin()?'<th></th>':''}`;
-  const rows=all.length?all.map(t => {
+  const rows=all.length?all.map(t=>{
     const si=tasks.indexOf(t), s=getStatus(t), canCheck=isAdmin()||t.techId===currentUser.id;
     return`<tr style="cursor:pointer" onclick="openDp(${si})">
       <td onclick="event.stopPropagation()"><div class="comp-name">${esc(t.comp)}</div>${t.loc?`<div class="comp-loc">📍 ${esc(t.loc)}</div>`:''}</td>
@@ -211,15 +231,15 @@ function buildListView() {
   return statsHTML+ctrlHTML+`<div class="tbl-wrap"><table><thead><tr>${theadHTML}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-/* CALENDAR VIEW */
+// ── CALENDAR VIEW ────────────────────────────────────────
 function buildCalView() {
   const all=getFiltered(), now=new Date();
   const header=`<div class="cal-header"><div class="year-nav"><button onclick="calYear--;render()">◀ Précédent</button><span class="year-label">${calYear}</span><button onclick="calYear++;render()">Suivant ▶</button></div><div class="cal-legend"><span><span class="leg-dot" style="background:#185FA5"></span>Planifié</span><span><span class="leg-dot" style="background:var(--green)"></span>Effectué</span><span><span class="leg-dot" style="background:var(--red)"></span>En retard</span></div></div>`;
   const ths=`<th>Composant</th>${MONTHS_S.map(m=>`<th>${m}</th>`).join('')}`;
-  const rows=all.map(t => {
+  const rows=all.map(t=>{
     const si=tasks.indexOf(t);
-    const cells=Array.from({length:12},(_,mo) => {
-      if(!isInMonth(t,mo,calYear)) return`<td><div style="display:flex;align-items:center;justify-content:center"><div class="cal-dot d-empty"></div></div></td>`;
+    const cells=Array.from({length:12},(_,mo)=>{
+      if(!isInMonth(t,mo,calYear))return`<td><div style="display:flex;align-items:center;justify-content:center"><div class="cal-dot d-empty"></div></div></td>`;
       const isLate=!t.done&&new Date(calYear,mo+1,0)<now;
       const cls=t.done?'d-done':isLate?'d-late':'d-sched';
       return`<td><div style="display:flex;align-items:center;justify-content:center"><div class="cal-dot ${cls}" onclick="calClick(${si})" title="${esc(t.prod)}">${t.done?'✓':isLate?'!':''}</div></div></td>`;
@@ -230,8 +250,7 @@ function buildCalView() {
 }
 
 function isInMonth(t,mo,yr) {
-  if(!t.date) return false;
-  const base=new Date(t.date); if(isNaN(base)) return false;
+  if(!t.date)return false; const base=new Date(t.date); if(isNaN(base))return false;
   const iv=FREQ_M[t.freq]||12;
   for(let off=0;off<120;off++){const d=new Date(base);d.setMonth(d.getMonth()+off*iv);if(d.getFullYear()===yr&&d.getMonth()===mo)return true;if(d.getFullYear()>yr)break;}
   return false;
@@ -239,17 +258,19 @@ function isInMonth(t,mo,yr) {
 function calClick(si) {
   const t=tasks[si], canCheck=isAdmin()||t.techId===currentUser.id;
   if(!canCheck){toast('Vous ne pouvez cocher que vos propres tâches','err');return;}
-  showCf('Confirmer intervention',`Marquer <strong>${esc(t.comp)}</strong> comme effectué ?`,()=>{tasks[si].done=true;tasks[si].hist.push(today());toast('Tâche marquée effectuée');render();});
+  showCf('Confirmer intervention',`Marquer <strong>${esc(t.comp)}</strong> comme effectué ?`,()=>{
+    tasks[si].done=true; tasks[si].hist.push(today()); saveTasks(); toast('Tâche marquée effectuée'); render();
+  });
 }
 
-/* TECH VIEW */
+// ── TECH VIEW ────────────────────────────────────────────
 function buildTechView() {
   const techs=users.filter(u=>u.role==='tech'&&u.active);
-  if(!techs.length) return`<div class="empty"><div class="empty-icon">👷</div><p>Aucun technicien</p></div>`;
-  const cards=techs.map(u => {
+  if(!techs.length)return`<div class="empty"><div class="empty-icon">👷</div><p>Aucun technicien</p></div>`;
+  const cards=techs.map(u=>{
     const tlist=tasks.filter(t=>t.techId===u.id).sort((a,b)=>a.crit-b.crit);
     const done=tlist.filter(t=>t.done).length, pct=tlist.length?Math.round(done/tlist.length*100):0;
-    const taskRows=tlist.map(t => {
+    const taskRows=tlist.map(t=>{
       const si=tasks.indexOf(t), s=getStatus(t), canCheck=isAdmin()||t.techId===currentUser.id;
       return`<div class="tech-task"><span class="badge ${cClass(t.crit)}" style="font-size:10px;padding:1px 5px">${t.crit}</span><span class="tech-task-name">${esc(t.comp.substring(0,25))}${t.comp.length>25?'…':''}</span><span class="badge ${sClass(s)}" style="font-size:10px">${sLabel(s)}</span><input type="checkbox" ${t.done?'checked':''} ${canCheck?'':'disabled'} onchange="toggleDone(${si},this)"/></div>`;
     }).join('');
@@ -258,26 +279,26 @@ function buildTechView() {
   return`<div class="tech-grid">${cards}</div>`;
 }
 
-/* HISTORY VIEW */
+// ── HISTORY VIEW ─────────────────────────────────────────
 function buildHistView() {
   const list=isAdmin()?tasks:tasks.filter(t=>t.techId===currentUser.id);
   const all=[]; list.forEach(t=>(t.hist||[]).forEach(d=>all.push({d,t}))); all.sort((a,b)=>new Date(b.d)-new Date(a.d));
-  if(!all.length) return`<div class="empty"><div class="empty-icon">🕐</div><p>Aucune intervention enregistrée</p></div>`;
+  if(!all.length)return`<div class="empty"><div class="empty-icon">🕐</div><p>Aucune intervention enregistrée</p></div>`;
   const items=all.map(({d,t})=>`<div class="hist-item"><div class="hist-date">${fmtD(d)}</div><div style="display:flex;flex-direction:column;align-items:center"><div class="hist-dot"></div></div><div class="hist-cont"><div class="hist-comp">${esc(t.comp)}</div><div class="hist-det"><span class="badge ${tClass(t.type)}" style="font-size:10px">${t.type}</span> ${esc(t.prod)} — ${esc(getTechName(t.techId))} ${t.qty?`— <strong>${esc(t.qty)}</strong>`:''}</div>${t.note?`<div style="font-size:11px;color:var(--text3);margin-top:3px;font-style:italic">${esc(t.note)}</div>`:''}</div></div>`).join('');
   return`<div class="hist-wrap">${items}</div>`;
 }
 
-/* USER VIEW */
+// ── USER VIEW ────────────────────────────────────────────
 function buildUserView() {
-  if(!isAdmin()) return`<div class="empty"><div class="empty-icon">🔒</div><p>Accès refusé</p></div>`;
-  const cards=users.map((u,i) => {
+  if(!isAdmin())return`<div class="empty"><div class="empty-icon">🔒</div><p>Accès refusé</p></div>`;
+  const cards=users.map((u,i)=>{
     const tc=tasks.filter(t=>t.techId===u.id).length, isMe=u.id===currentUser.id;
     return`<div class="user-card"><div class="user-av-lg ${u.role==='admin'?'av-admin':'av-tech'}">${initials(u.name)}</div><div class="user-info"><div class="user-fullname">${esc(u.name)} ${isMe?'<span style="font-size:10px;color:var(--text3)">(vous)</span>':''}</div><div class="user-detail">@${esc(u.login)} · ${esc(u.spec||'')}</div><div class="user-badges"><span class="badge ${u.role==='admin'?'b-admin':'b-tech'}">${u.role==='admin'?'Admin':'Technicien'}</span>${u.role==='tech'?`<span style="font-size:11px;color:var(--text3)">${tc} tâche${tc>1?'s':''}</span>`:''} ${!u.active?'<span class="badge s-late">Désactivé</span>':''}</div></div><div class="user-actions"><button class="btn-icon" onclick="openUserModal(${i})">✏</button>${!isMe?`<button class="btn-icon" onclick="toggleUserActive(${i})" style="color:${u.active?'var(--orange)':'var(--green)'}">${u.active?'⏸':'▶'}</button>`:''} ${!isMe&&u.role!=='admin'?`<button class="btn-icon" onclick="delUser(${i})" style="color:var(--red)">🗑</button>`:''}</div></div>`;
   }).join('');
   return`<div style="display:flex;justify-content:flex-end;margin-bottom:16px"><button class="btn btn-p" onclick="openUserModal()">+ Ajouter un utilisateur</button></div><div class="user-grid">${cards}</div>`;
 }
 
-/* DETAIL PANEL */
+// ── DETAIL PANEL ─────────────────────────────────────────
 function openDp(si) {
   const t=tasks[si], s=getStatus(t);
   document.getElementById('dp-t').textContent=t.comp;
@@ -291,7 +312,7 @@ function openDp(si) {
 }
 function closeDp() { document.getElementById('dpOverlay').classList.remove('open'); document.getElementById('dpPanel').classList.remove('open'); }
 
-/* TASK MODAL */
+// ── TASK MODAL ───────────────────────────────────────────
 function openTaskModal(idx=-1) {
   if(!isAdmin()){toast('Réservé aux administrateurs','err');return;}
   editTaskIdx=idx; const t=idx>=0?tasks[idx]:null;
@@ -307,7 +328,7 @@ function openTaskModal(idx=-1) {
 }
 function closeTaskModal() { document.getElementById('taskModal').classList.remove('open'); }
 function updProdLbl() {
-  const v=document.getElementById('fType')?.value; if(!v) return;
+  const v=document.getElementById('fType')?.value; if(!v)return;
   document.getElementById('prodLbl').textContent=v==='Huile'?'Référence huile *':'Référence graisse *';
   document.getElementById('fProd').placeholder=v==='Huile'?'ex: Shell Omala S2 GX 220':'ex: SKF LGMT 3';
 }
@@ -316,10 +337,10 @@ function saveTask() {
   if(!comp){toast('Nom du composant requis','err');return;} if(!date){toast('Date requise','err');return;}
   const t={id:editTaskIdx>=0?tasks[editTaskIdx].id:nextTaskId(),comp,prod:document.getElementById('fProd').value.trim(),crit:+document.getElementById('fCrit').value,type:document.getElementById('fType').value,qty:document.getElementById('fQty').value.trim(),freq:document.getElementById('fFreq').value,date,techId:+document.getElementById('fTech').value||null,dur:document.getElementById('fDur').value.trim(),loc:document.getElementById('fLoc').value.trim(),note:document.getElementById('fNote').value.trim(),done:editTaskIdx>=0?tasks[editTaskIdx].done:false,hist:editTaskIdx>=0?tasks[editTaskIdx].hist:[]};
   if(editTaskIdx>=0) tasks[editTaskIdx]=t; else tasks.push(t);
-  closeTaskModal(); toast(editTaskIdx>=0?'Tâche modifiée':'Tâche ajoutée'); render();
+  saveTasks(); closeTaskModal(); toast(editTaskIdx>=0?'Tâche modifiée ✓':'Tâche ajoutée ✓'); render();
 }
 
-/* USER MODAL */
+// ── USER MODAL ───────────────────────────────────────────
 function openUserModal(idx=-1) {
   editUserIdx=idx; const u=idx>=0?users[idx]:null;
   document.getElementById('userModalTitle').textContent=u?`Modifier : ${u.name}`:'Nouvel utilisateur';
@@ -342,22 +363,23 @@ function saveUser() {
   if(editUserIdx<0&&pwd!==pwd2){toast('Les mots de passe ne correspondent pas','err');return;}
   if(editUserIdx>=0){users[editUserIdx]={...users[editUserIdx],name,login,role,spec};if(pwd)users[editUserIdx].pwd=pwd;}
   else users.push({id:nextUserId(),name,login,role,spec,pwd,active:true});
-  closeUserModal(); toast(editUserIdx>=0?'Utilisateur modifié':'Utilisateur créé'); render();
+  saveUsers(); closeUserModal(); toast(editUserIdx>=0?'Utilisateur modifié ✓':'Utilisateur créé ✓'); render();
 }
-function toggleUserActive(i){users[i].active=!users[i].active;toast(users[i].active?'Activé':'Désactivé','warn');render();}
-function delUser(i){showCf('Supprimer',`Supprimer <strong>${esc(users[i].name)}</strong> ?`,()=>{users.splice(i,1);toast('Supprimé','warn');render();});}
+function toggleUserActive(i){users[i].active=!users[i].active;saveUsers();toast(users[i].active?'Activé':'Désactivé','warn');render();}
+function delUser(i){showCf('Supprimer',`Supprimer <strong>${esc(users[i].name)}</strong> ?`,()=>{users.splice(i,1);saveUsers();toast('Supprimé','warn');render();});}
 
-/* ACTIONS */
+// ── ACTIONS ──────────────────────────────────────────────
 function toggleDone(si,el) {
   const t=tasks[si];
   if(!isAdmin()&&t.techId!==currentUser.id){el.checked=t.done;toast('Vous ne pouvez cocher que vos tâches','err');return;}
-  t.done=el.checked; if(el.checked){t.hist.push(today());toast('✓ Tâche marquée effectuée');}else toast('Tâche réouverte','warn');
-  render();
+  t.done=el.checked;
+  if(el.checked){t.hist.push(today());toast('✓ Tâche marquée effectuée');}else toast('Tâche réouverte','warn');
+  saveTasks(); render();
 }
-function delTask(si){closeDp();showCf('Supprimer la tâche',`Supprimer <strong>${esc(tasks[si].comp)}</strong> ?`,()=>{tasks.splice(si,1);toast('Supprimée','warn');render();});}
-function resetDone(){showCf('Nouvelle période','Remettre toutes les tâches en Planifié ?',()=>{tasks.forEach(t=>t.done=false);toast('Période réinitialisée');render();});}
+function delTask(si){closeDp();showCf('Supprimer la tâche',`Supprimer <strong>${esc(tasks[si].comp)}</strong> ?`,()=>{tasks.splice(si,1);saveTasks();toast('Supprimée','warn');render();});}
+function resetDone(){showCf('Nouvelle période','Remettre toutes les tâches en Planifié ?',()=>{tasks.forEach(t=>t.done=false);saveTasks();toast('Période réinitialisée');render();});}
 
-/* CSV */
+// ── EXPORT CSV ───────────────────────────────────────────
 function q(s){return'"'+String(s||'').replace(/"/g,'""')+'"';}
 function exportCSV(){
   const h=['ID','Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Localisation','Durée','Remarques','Effectué','Historique'];
@@ -366,143 +388,80 @@ function exportCSV(){
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download=`lubriplan_${today()}.csv`;a.click();toast('Export CSV téléchargé');
 }
-/* IMPORT CSV ou XLSX */
+
+// ── IMPORT EXCEL / CSV ───────────────────────────────────
 function importFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const ext = file.name.split('.').pop().toLowerCase();
-  if (ext === 'xlsx' || ext === 'xls') {
-    importXLSX(file);
-  } else {
-    importCSV(file);
-  }
-  e.target.value = '';
+  const file=e.target.files[0]; if(!file)return;
+  const ext=file.name.split('.').pop().toLowerCase();
+  if(ext==='xlsx'||ext==='xls') importXLSX(file);
+  else importCSVfile(file);
+  e.target.value='';
 }
 
 function importXLSX(file) {
-  const reader = new FileReader();
-  reader.onload = function(ev) {
+  const reader=new FileReader();
+  reader.onload=function(ev){
     try {
-      const data    = new Uint8Array(ev.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheet   = workbook.Sheets[workbook.SheetNames[0]];
-      const rows    = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-      if (rows.length < 2) { toast('Fichier vide ou invalide', 'err'); return; }
-
-      // Détection automatique de l'en-tête
-      const header = rows[0].map(h => String(h).toLowerCase().trim());
-      let count = 0;
-
-      rows.slice(1).forEach(row => {
-        if (row.every(c => c === '' || c === null || c === undefined)) return;
-
-        // Mapping flexible par nom de colonne
-        const get = (keys) => {
-          for (const k of keys) {
-            const idx = header.findIndex(h => h.includes(k));
-            if (idx >= 0 && row[idx] !== undefined && row[idx] !== '') return String(row[idx]).trim();
-          }
-          return '';
+      const data=new Uint8Array(ev.target.result);
+      const wb=XLSX.read(data,{type:'array'});
+      const sheet=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+      if(rows.length<2){toast('Fichier vide ou invalide','err');return;}
+      const header=rows[0].map(h=>String(h).toLowerCase().trim());
+      let count=0;
+      rows.slice(1).forEach(row=>{
+        if(row.every(c=>c===''||c===null||c===undefined))return;
+        const get=(keys)=>{
+          for(const k of keys){const idx=header.findIndex(h=>h.includes(k));if(idx>=0&&row[idx]!==undefined&&row[idx]!=='')return String(row[idx]).trim();}
+          return'';
         };
-
-        // Conversion date Excel -> YYYY-MM-DD
-        const parseDate = (val) => {
-          if (!val) return today();
-          if (typeof val === 'number') {
-            // Numéro de série Excel
-            const d = new Date(Math.round((val - 25569) * 86400 * 1000));
-            return d.toISOString().split('T')[0];
-          }
-          const s = String(val).trim();
-          // Format DD/MM/YYYY
-          if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
-            const [dd, mm, yyyy] = s.split('/');
-            return `${yyyy}-${mm}-${dd}`;
-          }
-          // Format YYYY-MM-DD déjà bon
-          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        const parseDate=(val)=>{
+          if(!val)return today();
+          if(typeof val==='number'){const d=new Date(Math.round((val-25569)*86400*1000));return d.toISOString().split('T')[0];}
+          const s=String(val).trim();
+          if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){const[dd,mm,yyyy]=s.split('/');return`${yyyy}-${mm}-${dd}`;}
+          if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
           return today();
         };
-
-        const comp = get(['composant','équipement','equipement','component','nom']);
-        if (!comp) return;
-
-        const critRaw = get(['criticité','criticite','crit','priorité','priorite']);
-        const crit    = parseInt(critRaw) || 3;
-
-        const typeRaw = get(['type']);
-        const type    = typeRaw.toLowerCase().includes('graisse') ? 'Graisse' : 'Huile';
-
-        const freqRaw = get(['fréquence','frequence','freq','periodicité','periodicite']);
-        const freqMap = {
-          'hebdo': 'Hebdomadaire', 'mensuel': 'Mensuelle', 'bimest': 'Bimestrielle',
-          'trimest': 'Trimestrielle', 'semest': 'Semestrielle', 'annuel': 'Annuelle'
-        };
-        let freq = 'Trimestrielle';
-        for (const [k, v] of Object.entries(freqMap)) {
-          if (freqRaw.toLowerCase().includes(k)) { freq = v; break; }
-        }
-
-        const dateRaw = get(['échéance','echeance','date','prochaine']);
-        const date    = parseDate(dateRaw);
-
-        const doneRaw = get(['effectué','effectue','fait','done','statut']);
-        const done    = ['oui','yes','1','true','effectué','effectue'].includes(doneRaw.toLowerCase());
-
-        tasks.push({
-          id:    nextTaskId(),
-          comp,
-          crit:  Math.min(4, Math.max(1, crit)),
-          type,
-          prod:  get(['produit','référence','reference','réf','ref','lubrifiant']),
-          qty:   get(['quantité','quantite','qté','qte','qty']),
-          freq,
-          date,
-          techId: null,
-          dur:   get(['durée','duree','dur','temps']),
-          loc:   get(['localisation','local','emplacement','zone','lieu']),
-          note:  get(['remarque','note','commentaire','observation']),
-          done,
-          hist:  done ? [date] : []
-        });
+        const comp=get(['composant','équipement','equipement','component','nom','machine']);
+        if(!comp)return;
+        const critRaw=get(['criticité','criticite','crit','priorité','priorite']);
+        const crit=Math.min(4,Math.max(1,parseInt(critRaw)||3));
+        const typeRaw=get(['type']);
+        const type=typeRaw.toLowerCase().includes('graisse')?'Graisse':'Huile';
+        const freqRaw=get(['fréquence','frequence','freq','periodicité','periodicite']);
+        const freqMap={'hebdo':'Hebdomadaire','mensuel':'Mensuelle','bimest':'Bimestrielle','trimest':'Trimestrielle','semest':'Semestrielle','annuel':'Annuelle'};
+        let freq='Trimestrielle';
+        for(const[k,v]of Object.entries(freqMap)){if(freqRaw.toLowerCase().includes(k)){freq=v;break;}}
+        const date=parseDate(get(['échéance','echeance','date','prochaine']));
+        const doneRaw=get(['effectué','effectue','fait','done','statut']);
+        const done=['oui','yes','1','true','effectué','effectue'].includes(doneRaw.toLowerCase());
+        tasks.push({id:nextTaskId(),comp,crit,type,prod:get(['produit','référence','reference','réf','ref','lubrifiant','huile']),qty:get(['quantité','quantite','qté','qte','qty']),freq,date,techId:null,dur:get(['durée','duree','dur','temps']),loc:get(['localisation','local','emplacement','zone','lieu']),note:get(['remarque','note','commentaire','observation']),done,hist:done?[date]:[]});
         count++;
       });
-
-      toast(`✓ ${count} tâche(s) importée(s) depuis Excel`);
-      render();
-    } catch(err) {
-      console.error(err);
-      toast('Erreur lecture Excel : ' + err.message, 'err');
-    }
+      saveTasks(); toast(`✓ ${count} tâche(s) importée(s) depuis Excel`); render();
+    }catch(err){toast('Erreur Excel : '+err.message,'err');}
   };
   reader.readAsArrayBuffer(file);
 }
 
-function importCSV(file) {
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const lines = ev.target.result.split('\n').slice(1).filter(l => l.trim());
-    let count = 0;
-    lines.forEach(line => {
-      const cols = line.split(',').map(x => x.replace(/^"|"$/g,'').replace(/""/g,'"'));
-      if (cols.length < 9) return;
-      tasks.push({
-        id: nextTaskId(), comp: cols[1], crit: +cols[2]||1,
-        type: cols[3]||'Huile', prod: cols[4], qty: cols[5],
-        freq: cols[6], techId: null, date: cols[8],
-        loc: cols[9]||'', dur: cols[10]||'', note: cols[11]||'',
-        done: cols[12]==='Oui', hist: (cols[13]||'').split(';').filter(Boolean)
-      });
+function importCSVfile(file) {
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    const lines=ev.target.result.split('\n').slice(1).filter(l=>l.trim());
+    let count=0;
+    lines.forEach(line=>{
+      const cols=line.split(',').map(x=>x.replace(/^"|"$/g,'').replace(/""/g,'"'));
+      if(cols.length<9)return;
+      tasks.push({id:nextTaskId(),comp:cols[1],crit:+cols[2]||1,type:cols[3]||'Huile',prod:cols[4],qty:cols[5],freq:cols[6],techId:null,date:cols[8],loc:cols[9]||'',dur:cols[10]||'',note:cols[11]||'',done:cols[12]==='Oui',hist:(cols[13]||'').split(';').filter(Boolean)});
       count++;
     });
-    toast(`✓ ${count} tâche(s) importée(s) depuis CSV`);
-    render();
+    saveTasks(); toast(`✓ ${count} tâche(s) importée(s) depuis CSV`); render();
   };
   reader.readAsText(file);
 }
 
-/* CONFIRM & TOAST */
+// ── CONFIRM & TOAST ──────────────────────────────────────
 function showCf(title,body,cb){document.getElementById('cfTitle').textContent=title;document.getElementById('cfBody').innerHTML=body;cfCb=cb;document.getElementById('confirmModal').classList.add('open');}
 function closeCf(){document.getElementById('confirmModal').classList.remove('open');cfCb=null;}
 document.getElementById('cfBtn').onclick=()=>{if(cfCb)cfCb();closeCf();};
@@ -512,7 +471,7 @@ function toast(msg,type='ok'){
   setTimeout(()=>{el.style.transition='all .3s';el.style.opacity='0';el.style.transform='translateX(20px)';setTimeout(()=>el.remove(),300);},3000);
 }
 
-/* KEYBOARD */
+// ── KEYBOARD ─────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(document.getElementById('confirmModal').classList.contains('open'))closeCf();
@@ -522,5 +481,5 @@ document.addEventListener('keydown',e=>{
   }
 });
 
-/* BOOT */
+// ── BOOT ─────────────────────────────────────────────────
 loadData();
