@@ -3,19 +3,32 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>LubriPlan — Gestion Graissage & Vidange</title>
-  <meta name="description" content="LubriPlan — Application de gestion du planning de graissage et vidange industrielle. Suivi des équipements, techniciens et interventions."/>
-  <meta name="keywords" content="lubriplan, graissage industriel, vidange, maintenance préventive, planning lubrification"/>
+
+  <!-- ══ SEO GOOGLE ══ -->
+  <title>LubriPlan — Gestion Graissage & Vidange Industrielle</title>
+  <meta name="description" content="LubriPlan : logiciel de gestion du graissage et de la vidange industrielle. Planifiez, suivez et gérez vos interventions de maintenance."/>
+  <meta name="keywords" content="lubriplan, graissage industriel, vidange, maintenance, lubrification, planning maintenance"/>
   <meta name="robots" content="index, follow"/>
-  <meta property="og:title" content="LubriPlan — Graissage & Vidange"/>
-  <meta property="og:description" content="Gestion du planning de graissage et vidange industrielle"/>
+  <meta name="author" content="LubriPlan"/>
+  <meta property="og:title" content="LubriPlan — Gestion Graissage & Vidange"/>
+  <meta property="og:description" content="Logiciel de gestion du graissage et de la vidange industrielle."/>
   <meta property="og:type" content="website"/>
+  <meta property="og:locale" content="fr_FR"/>
+
   <link rel="stylesheet" href="style.css"/>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+  <style>
+    /* LOGIN BLEU */
+    #loginScreen { background: linear-gradient(135deg,#1a3a5c,#0f2540,#1a4a8a) !important; }
+    .login-top   { background: linear-gradient(135deg,#1a4a8a,#0f2540) !important; }
+    .login-btn   { background: #1a4a8a !important; }
+    .login-btn:hover { background: #0f2540 !important; }
+  </style>
 </head>
 <body>
 
-<!-- ═══ LOGIN ═══ -->
+<!-- LOGIN -->
 <div id="loginScreen">
   <div class="login-card">
     <div class="login-top">
@@ -26,28 +39,20 @@
     <div class="login-body">
       <div class="login-row">
         <label>Identifiant</label>
-        <input type="text" id="loginUser" placeholder="Votre identifiant"
-               autocomplete="username"
-               onkeydown="if(event.key==='Enter')document.getElementById('loginPwd').focus()"/>
+        <input type="text" id="loginUser" placeholder="Votre identifiant" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="username"/>
       </div>
       <div class="login-row">
         <label>Mot de passe</label>
-        <input type="password" id="loginPwd" placeholder="••••••••"
-               autocomplete="current-password"
-               onkeydown="if(event.key==='Enter')doLogin()"/>
+        <input type="password" id="loginPwd" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()" autocomplete="current-password"/>
       </div>
       <button class="login-btn" onclick="doLogin()">Se connecter</button>
       <div class="login-err" id="loginErr"></div>
-      <div class="login-hint">
-        Contactez l'administrateur pour obtenir vos identifiants.
-      </div>
     </div>
   </div>
 </div>
 
-<!-- ═══ APP ═══ -->
+<!-- APP -->
 <div id="app">
-
   <aside class="sidebar">
     <div class="sidebar-logo">
       <span class="logo-icon">⚙</span>
@@ -58,29 +63,28 @@
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">SUIVI</div>
-      <div class="nav-item active" id="nav_liste"        onclick="switchView('liste')">       <span class="nav-icon">📋</span><span>Tâches</span></div>
-      <div class="nav-item"        id="nav_planning"     onclick="switchView('planning')">    <span class="nav-icon">📅</span><span>Planning</span></div>
-      <div class="nav-item"        id="nav_techniciens"  onclick="switchView('techniciens')"> <span class="nav-icon">👷</span><span>Techniciens</span></div>
-      <div class="nav-item"        id="nav_historique"   onclick="switchView('historique')">  <span class="nav-icon">🕐</span><span>Historique</span></div>
-      <div class="nav-item"        id="nav_utilisateurs" onclick="switchView('utilisateurs')" style="display:none"><span class="nav-icon">👥</span><span>Utilisateurs</span></div>
+      <div class="nav-item active" id="nav_liste" onclick="switchView('liste')"><span class="nav-icon">📋</span><span>Tâches</span></div>
+      <div class="nav-item" id="nav_planning" onclick="switchView('planning')"><span class="nav-icon">📅</span><span>Planning</span></div>
+      <div class="nav-item" id="nav_techniciens" onclick="switchView('techniciens')"><span class="nav-icon">👷</span><span>Techniciens</span></div>
+      <div class="nav-item" id="nav_historique" onclick="switchView('historique')"><span class="nav-icon">🕐</span><span>Historique</span></div>
+      <div class="nav-item" id="nav_utilisateurs" onclick="switchView('utilisateurs')"><span class="nav-icon">👥</span><span>Utilisateurs</span></div>
       <div class="nav-section">DONNÉES</div>
-      <div class="nav-item" onclick="exportCSV()">                                            <span class="nav-icon">📤</span><span>Export CSV</span></div>
-      <div class="nav-item" onclick="document.getElementById('csvInput').click()">            <span class="nav-icon">📥</span><span>Import</span></div>
-      <div class="nav-item" onclick="window.print()">                                         <span class="nav-icon">🖨</span><span>Imprimer</span></div>
+      <div class="nav-item" onclick="exportCSV()"><span class="nav-icon">📤</span><span>Export CSV</span></div>
+      <div class="nav-item" onclick="document.getElementById('fileInput').click()"><span class="nav-icon">📥</span><span>Import Excel/CSV</span></div>
+      <div class="nav-item" onclick="window.print()"><span class="nav-icon">🖨</span><span>Imprimer</span></div>
     </nav>
-    <div class="sidebar-save" id="saveStatus"></div>
-    <div class="sidebar-footer">v2.0 — 2025</div>
+    <div class="sidebar-footer">v1.0 — 2025</div>
   </aside>
 
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title" id="pageTitle">Planning des tâches</div>
-        <div class="page-sub"   id="pageSub">Triées par criticité</div>
+        <div class="page-sub" id="pageSub">Triées par criticité</div>
       </div>
       <div class="topbar-right">
         <div class="user-pill">
-          <div class="user-av"   id="userAv"></div>
+          <div class="user-av" id="userAv"></div>
           <span class="user-name" id="userName"></span>
           <span class="user-role" id="userRole"></span>
         </div>
@@ -94,10 +98,7 @@
 <!-- MODAL TÂCHE -->
 <div class="overlay" id="taskModal">
   <div class="modal">
-    <div class="modal-header">
-      <h2 id="taskModalTitle">Nouvelle tâche</h2>
-      <button class="btn-close" onclick="closeTaskModal()">✕</button>
-    </div>
+    <div class="modal-header"><h2 id="taskModalTitle">Nouvelle tâche</h2><button class="btn-close" onclick="closeTaskModal()">✕</button></div>
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-row full"><label>Composant / Équipement *</label><input type="text" id="fComp" placeholder="ex: Pompe centrifuge P-101"/></div>
@@ -106,7 +107,7 @@
         <div class="form-row"><label id="prodLbl">Référence huile *</label><input type="text" id="fProd" placeholder="ex: Shell Omala S2 GX 220"/></div>
         <div class="form-row"><label>Quantité</label><input type="text" id="fQty" placeholder="ex: 4 L ou 200 g"/></div>
         <div class="form-section">Planification</div>
-        <div class="form-row"><label>Fréquence *</label><select id="fFreq"><option value="Hebdomadaire">Hebdomadaire</option><option value="Mensuelle">Mensuelle</option><option value="Bimestrielle">Bimestrielle</option><option value="Trimestrielle">Trimestrielle</option><option value="Semestrielle">Semestrielle</option><option value="Annuelle">Annuelle</option></select></div>
+        <div class="form-row"><label>Fréquence *</label><select id="fFreq"><option value="Hebdomadaire">Hebdomadaire</option><option value="Mensuelle">Mensuelle</option><option value="Bimestrielle">Bimestrielle (2 mois)</option><option value="Trimestrielle">Trimestrielle</option><option value="Semestrielle">Semestrielle</option><option value="Annuelle">Annuelle</option></select></div>
         <div class="form-row"><label>Prochaine échéance *</label><input type="date" id="fDate"/></div>
         <div class="form-row"><label>Durée estimée</label><input type="text" id="fDur" placeholder="ex: 30 min"/></div>
         <div class="form-row"><label>Technicien responsable</label><select id="fTech"></select></div>
@@ -115,20 +116,14 @@
         <div class="form-row full"><label>Remarques</label><textarea id="fNote" placeholder="Instructions particulières..."></textarea></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-s" onclick="closeTaskModal()">Annuler</button>
-      <button class="btn btn-p" onclick="saveTask()">Enregistrer</button>
-    </div>
+    <div class="modal-footer"><button class="btn btn-s" onclick="closeTaskModal()">Annuler</button><button class="btn btn-p" onclick="saveTask()">Enregistrer</button></div>
   </div>
 </div>
 
 <!-- MODAL UTILISATEUR -->
 <div class="overlay" id="userModal">
   <div class="modal modal-sm">
-    <div class="modal-header">
-      <h2 id="userModalTitle">Nouvel utilisateur</h2>
-      <button class="btn-close" onclick="closeUserModal()">✕</button>
-    </div>
+    <div class="modal-header"><h2 id="userModalTitle">Nouvel utilisateur</h2><button class="btn-close" onclick="closeUserModal()">✕</button></div>
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-row full"><label>Nom complet *</label><input type="text" id="uName" placeholder="ex: Ahmed Bensalem"/></div>
@@ -139,25 +134,16 @@
         <div class="form-row full" id="uPwd2Row"><label>Confirmer le mot de passe</label><input type="password" id="uPwd2" placeholder="Retaper le mot de passe"/></div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-s" onclick="closeUserModal()">Annuler</button>
-      <button class="btn btn-p" onclick="saveUser()">Enregistrer</button>
-    </div>
+    <div class="modal-footer"><button class="btn btn-s" onclick="closeUserModal()">Annuler</button><button class="btn btn-p" onclick="saveUser()">Enregistrer</button></div>
   </div>
 </div>
 
 <!-- MODAL CONFIRMATION -->
 <div class="overlay" id="confirmModal">
   <div class="modal modal-sm">
-    <div class="modal-header">
-      <h2 id="cfTitle">Confirmation</h2>
-      <button class="btn-close" onclick="closeCf()">✕</button>
-    </div>
+    <div class="modal-header"><h2 id="cfTitle">Confirmation</h2><button class="btn-close" onclick="closeCf()">✕</button></div>
     <div class="modal-body" id="cfBody" style="font-size:14px;color:#5a5750;line-height:1.6"></div>
-    <div class="modal-footer">
-      <button class="btn btn-s" onclick="closeCf()">Annuler</button>
-      <button class="btn btn-d" id="cfBtn">Confirmer</button>
-    </div>
+    <div class="modal-footer"><button class="btn btn-s" onclick="closeCf()">Annuler</button><button class="btn btn-d" id="cfBtn">Confirmer</button></div>
   </div>
 </div>
 
@@ -168,12 +154,16 @@
     <div><div class="dp-title" id="dp-t"></div><div class="dp-sub" id="dp-s"></div></div>
     <button class="btn-close" onclick="closeDp()">✕</button>
   </div>
-  <div class="dp-body"   id="dp-b"></div>
+  <div class="dp-body" id="dp-b"></div>
   <div class="dp-footer" id="dp-f"></div>
 </div>
 
 <div class="toast-container" id="toastC"></div>
-<input type="file" id="csvInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
+
+<!-- inputs fichiers (2 IDs pour compatibilité) -->
+<input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
+<input type="file" id="csvInput"  accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 </body>
