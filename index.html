@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>LubriPlan — Graissage & Vidange</title>
+  <title>LubriPlan — Gestion Graissage & Vidange</title>
+  <meta name="description" content="LubriPlan — Application de gestion du planning de graissage et vidange industrielle. Suivi des équipements, techniciens et interventions."/>
+  <meta name="keywords" content="lubriplan, graissage industriel, vidange, maintenance préventive, planning lubrification"/>
+  <meta name="robots" content="index, follow"/>
+  <meta property="og:title" content="LubriPlan — Graissage & Vidange"/>
+  <meta property="og:description" content="Gestion du planning de graissage et vidange industrielle"/>
+  <meta property="og:type" content="website"/>
   <link rel="stylesheet" href="style.css"/>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
 </head>
@@ -20,14 +26,21 @@
     <div class="login-body">
       <div class="login-row">
         <label>Identifiant</label>
-        <input type="text" id="loginUser" placeholder="ex: admin" onkeydown="if(event.key==='Enter')doLogin()"/>
+        <input type="text" id="loginUser" placeholder="Votre identifiant"
+               autocomplete="username"
+               onkeydown="if(event.key==='Enter')document.getElementById('loginPwd').focus()"/>
       </div>
       <div class="login-row">
         <label>Mot de passe</label>
-        <input type="password" id="loginPwd" placeholder="••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+        <input type="password" id="loginPwd" placeholder="••••••••"
+               autocomplete="current-password"
+               onkeydown="if(event.key==='Enter')doLogin()"/>
       </div>
       <button class="login-btn" onclick="doLogin()">Se connecter</button>
       <div class="login-err" id="loginErr"></div>
+      <div class="login-hint">
+        Contactez l'administrateur pour obtenir vos identifiants.
+      </div>
     </div>
   </div>
 </div>
@@ -35,7 +48,6 @@
 <!-- ═══ APP ═══ -->
 <div id="app">
 
-  <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-logo">
       <span class="logo-icon">⚙</span>
@@ -46,42 +58,29 @@
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">SUIVI</div>
-      <div class="nav-item active" id="nav_liste" onclick="switchView('liste')">
-        <span class="nav-icon">📋</span><span>Tâches</span>
-      </div>
-      <div class="nav-item" id="nav_planning" onclick="switchView('planning')">
-        <span class="nav-icon">📅</span><span>Planning</span>
-      </div>
-      <div class="nav-item" id="nav_techniciens" onclick="switchView('techniciens')">
-        <span class="nav-icon">👷</span><span>Techniciens</span>
-      </div>
-      <div class="nav-item" id="nav_historique" onclick="switchView('historique')">
-        <span class="nav-icon">🕐</span><span>Historique</span>
-      </div>
+      <div class="nav-item active" id="nav_liste"        onclick="switchView('liste')">       <span class="nav-icon">📋</span><span>Tâches</span></div>
+      <div class="nav-item"        id="nav_planning"     onclick="switchView('planning')">    <span class="nav-icon">📅</span><span>Planning</span></div>
+      <div class="nav-item"        id="nav_techniciens"  onclick="switchView('techniciens')"> <span class="nav-icon">👷</span><span>Techniciens</span></div>
+      <div class="nav-item"        id="nav_historique"   onclick="switchView('historique')">  <span class="nav-icon">🕐</span><span>Historique</span></div>
+      <div class="nav-item"        id="nav_utilisateurs" onclick="switchView('utilisateurs')" style="display:none"><span class="nav-icon">👥</span><span>Utilisateurs</span></div>
       <div class="nav-section">DONNÉES</div>
-      <div class="nav-item" onclick="exportCSV()">
-        <span class="nav-icon">📤</span><span>Export CSV</span>
-      </div>
-      <div class="nav-item" onclick="document.getElementById('csvInput').click()">
-        <span class="nav-icon">📥</span><span>Import CSV</span>
-      </div>
-      <div class="nav-item" onclick="window.print()">
-        <span class="nav-icon">🖨</span><span>Imprimer</span>
-      </div>
+      <div class="nav-item" onclick="exportCSV()">                                            <span class="nav-icon">📤</span><span>Export CSV</span></div>
+      <div class="nav-item" onclick="document.getElementById('csvInput').click()">            <span class="nav-icon">📥</span><span>Import</span></div>
+      <div class="nav-item" onclick="window.print()">                                         <span class="nav-icon">🖨</span><span>Imprimer</span></div>
     </nav>
-    <div class="sidebar-footer">v1.0 — 2025</div>
+    <div class="sidebar-save" id="saveStatus"></div>
+    <div class="sidebar-footer">v2.0 — 2025</div>
   </aside>
 
-  <!-- MAIN -->
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title" id="pageTitle">Planning des tâches</div>
-        <div class="page-sub" id="pageSub">Triées par criticité</div>
+        <div class="page-sub"   id="pageSub">Triées par criticité</div>
       </div>
       <div class="topbar-right">
         <div class="user-pill">
-          <div class="user-av" id="userAv"></div>
+          <div class="user-av"   id="userAv"></div>
           <span class="user-name" id="userName"></span>
           <span class="user-role" id="userRole"></span>
         </div>
@@ -92,7 +91,7 @@
   </div>
 </div>
 
-<!-- ═══ MODAL TÂCHE ═══ -->
+<!-- MODAL TÂCHE -->
 <div class="overlay" id="taskModal">
   <div class="modal">
     <div class="modal-header">
@@ -101,67 +100,19 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-row full">
-          <label>Composant / Équipement *</label>
-          <input type="text" id="fComp" placeholder="ex: Pompe centrifuge P-101"/>
-        </div>
-        <div class="form-row">
-          <label>Criticité *</label>
-          <select id="fCrit">
-            <option value="1">1 — Critique</option>
-            <option value="2">2 — Haute</option>
-            <option value="3">3 — Moyenne</option>
-            <option value="4">4 — Faible</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label>Type de produit *</label>
-          <select id="fType" onchange="updProdLbl()">
-            <option value="Huile">Huile de vidange</option>
-            <option value="Graisse">Graisse</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label id="prodLbl">Référence huile *</label>
-          <input type="text" id="fProd" placeholder="ex: Shell Omala S2 GX 220"/>
-        </div>
-        <div class="form-row">
-          <label>Quantité</label>
-          <input type="text" id="fQty" placeholder="ex: 4 L ou 200 g"/>
-        </div>
+        <div class="form-row full"><label>Composant / Équipement *</label><input type="text" id="fComp" placeholder="ex: Pompe centrifuge P-101"/></div>
+        <div class="form-row"><label>Criticité *</label><select id="fCrit"><option value="1">1 — Critique</option><option value="2">2 — Haute</option><option value="3">3 — Moyenne</option><option value="4">4 — Faible</option></select></div>
+        <div class="form-row"><label>Type de produit *</label><select id="fType" onchange="updProdLbl()"><option value="Huile">Huile de vidange</option><option value="Graisse">Graisse</option></select></div>
+        <div class="form-row"><label id="prodLbl">Référence huile *</label><input type="text" id="fProd" placeholder="ex: Shell Omala S2 GX 220"/></div>
+        <div class="form-row"><label>Quantité</label><input type="text" id="fQty" placeholder="ex: 4 L ou 200 g"/></div>
         <div class="form-section">Planification</div>
-        <div class="form-row">
-          <label>Fréquence *</label>
-          <select id="fFreq">
-            <option value="Hebdomadaire">Hebdomadaire</option>
-            <option value="Mensuelle">Mensuelle</option>
-            <option value="Bimestrielle">Bimestrielle (2 mois)</option>
-            <option value="Trimestrielle">Trimestrielle</option>
-            <option value="Semestrielle">Semestrielle</option>
-            <option value="Annuelle">Annuelle</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label>Prochaine échéance *</label>
-          <input type="date" id="fDate"/>
-        </div>
-        <div class="form-row">
-          <label>Durée estimée</label>
-          <input type="text" id="fDur" placeholder="ex: 30 min"/>
-        </div>
-        <div class="form-row">
-          <label>Technicien responsable</label>
-          <select id="fTech"></select>
-        </div>
+        <div class="form-row"><label>Fréquence *</label><select id="fFreq"><option value="Hebdomadaire">Hebdomadaire</option><option value="Mensuelle">Mensuelle</option><option value="Bimestrielle">Bimestrielle</option><option value="Trimestrielle">Trimestrielle</option><option value="Semestrielle">Semestrielle</option><option value="Annuelle">Annuelle</option></select></div>
+        <div class="form-row"><label>Prochaine échéance *</label><input type="date" id="fDate"/></div>
+        <div class="form-row"><label>Durée estimée</label><input type="text" id="fDur" placeholder="ex: 30 min"/></div>
+        <div class="form-row"><label>Technicien responsable</label><select id="fTech"></select></div>
         <div class="form-section">Informations complémentaires</div>
-        <div class="form-row full">
-          <label>Localisation</label>
-          <input type="text" id="fLoc" placeholder="ex: Atelier 2 — Zone B"/>
-        </div>
-        <div class="form-row full">
-          <label>Remarques</label>
-          <textarea id="fNote" placeholder="Instructions particulières..."></textarea>
-        </div>
+        <div class="form-row full"><label>Localisation</label><input type="text" id="fLoc" placeholder="ex: Atelier 2 — Zone B"/></div>
+        <div class="form-row full"><label>Remarques</label><textarea id="fNote" placeholder="Instructions particulières..."></textarea></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -171,7 +122,7 @@
   </div>
 </div>
 
-<!-- ═══ MODAL UTILISATEUR ═══ -->
+<!-- MODAL UTILISATEUR -->
 <div class="overlay" id="userModal">
   <div class="modal modal-sm">
     <div class="modal-header">
@@ -180,33 +131,12 @@
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-row full">
-          <label>Nom complet *</label>
-          <input type="text" id="uName" placeholder="ex: Ahmed Bensalem"/>
-        </div>
-        <div class="form-row full">
-          <label>Identifiant (login) *</label>
-          <input type="text" id="uLogin" placeholder="ex: ahmed.b"/>
-        </div>
-        <div class="form-row">
-          <label>Rôle *</label>
-          <select id="uRole">
-            <option value="admin">Administrateur</option>
-            <option value="tech">Technicien</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <label>Spécialité</label>
-          <input type="text" id="uSpec" placeholder="ex: Mécanique"/>
-        </div>
-        <div class="form-row full">
-          <label id="pwdLbl">Mot de passe *</label>
-          <input type="password" id="uPwd" placeholder="Min. 4 caractères"/>
-        </div>
-        <div class="form-row full" id="uPwd2Row">
-          <label>Confirmer le mot de passe</label>
-          <input type="password" id="uPwd2" placeholder="Retaper le mot de passe"/>
-        </div>
+        <div class="form-row full"><label>Nom complet *</label><input type="text" id="uName" placeholder="ex: Ahmed Bensalem"/></div>
+        <div class="form-row full"><label>Identifiant (login) *</label><input type="text" id="uLogin" placeholder="ex: ahmed.b"/></div>
+        <div class="form-row"><label>Rôle *</label><select id="uRole"><option value="admin">Administrateur</option><option value="tech">Technicien</option></select></div>
+        <div class="form-row"><label>Spécialité</label><input type="text" id="uSpec" placeholder="ex: Mécanique"/></div>
+        <div class="form-row full"><label id="pwdLbl">Mot de passe *</label><input type="password" id="uPwd" placeholder="Min. 4 caractères"/></div>
+        <div class="form-row full" id="uPwd2Row"><label>Confirmer le mot de passe</label><input type="password" id="uPwd2" placeholder="Retaper le mot de passe"/></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -216,7 +146,7 @@
   </div>
 </div>
 
-<!-- ═══ MODAL CONFIRMATION ═══ -->
+<!-- MODAL CONFIRMATION -->
 <div class="overlay" id="confirmModal">
   <div class="modal modal-sm">
     <div class="modal-header">
@@ -231,22 +161,20 @@
   </div>
 </div>
 
-<!-- ═══ PANNEAU DETAIL ═══ -->
+<!-- PANNEAU DETAIL -->
 <div class="dp-overlay" id="dpOverlay" onclick="closeDp()"></div>
 <div class="dp-panel" id="dpPanel">
   <div class="dp-header">
-    <div>
-      <div class="dp-title" id="dp-t"></div>
-      <div class="dp-sub" id="dp-s"></div>
-    </div>
+    <div><div class="dp-title" id="dp-t"></div><div class="dp-sub" id="dp-s"></div></div>
     <button class="btn-close" onclick="closeDp()">✕</button>
   </div>
-  <div class="dp-body" id="dp-b"></div>
+  <div class="dp-body"   id="dp-b"></div>
   <div class="dp-footer" id="dp-f"></div>
 </div>
 
 <div class="toast-container" id="toastC"></div>
-<input type="file" id="csvInput" accept=".csv" style="display:none" onchange="importCSV(event)"/>
+<input type="file" id="csvInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
