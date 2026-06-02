@@ -23,25 +23,90 @@ let calFilterMachine = '';
 // ── DONNÉES PAR DÉFAUT ──────────────────────────────────
 function defaultUsers() {
   return [
-    { id:1, name:'Administrateur',  login:'admin',     pwd:'admin123', role:'admin', spec:'Gestion',       active:true },
-    { id:2, name:'Ahmed Bensalem',  login:'ahmed.b',   pwd:'tech1234', role:'tech',  spec:'Mécanique',     active:true },
-    { id:3, name:'Karim Mansouri',  login:'karim.m',   pwd:'tech1234', role:'tech',  spec:'Hydraulique',   active:true },
-    { id:4, name:'Sofiane Hadjadj', login:'sofiane.h', pwd:'tech1234', role:'tech',  spec:'Lubrification', active:true }
+    { id:1, name:'Administrateur', login:'admin',    pwd:'admin123', role:'admin', spec:'Gestion',    active:true },
+    { id:2, name:'Laawam.b',       login:'laawam.b', pwd:'tech1234', role:'tech',  spec:'Graisseur',  active:true }
   ];
 }
 
 function defaultTasks() {
+  const T = 2; // techId Laawam.b
   return [
-    { id:1,  comp:'Pompe centrifuge P-101',    crit:1, type:'Huile',   prod:'Shell Omala S2 GX 220', qty:'4 L',   freq:'Trimestrielle', techId:2, date:'2025-05-15', loc:'Atelier 1',           dur:'45 min', note:'Vidange complète + remplacement filtre.', done:false, hist:[] },
-    { id:2,  comp:'Réducteur principal R-201', crit:1, type:'Huile',   prod:'Mobil SHC 630',         qty:'8 L',   freq:'Semestrielle',  techId:2, date:'2025-04-01', loc:'Zone production',     dur:'1h30',   note:'Analyser huile usagée.',                  done:true,  hist:['2025-04-01'] },
-    { id:3,  comp:'Palier roulement B-05',     crit:2, type:'Graisse', prod:'SKF LGMT 3',            qty:'150 g', freq:'Mensuelle',     techId:3, date:'2025-05-01', loc:'Atelier 2',           dur:'20 min', note:'Nettoyer avant graissage.',               done:false, hist:['2025-04-01'] },
-    { id:4,  comp:'Compresseur C-10',          crit:2, type:'Huile',   prod:'Castrol Aircol PD 46',  qty:'3 L',   freq:'Trimestrielle', techId:3, date:'2025-06-10', loc:'Salle compresseurs',  dur:'40 min', note:'Vérifier joints et filtres air.',         done:false, hist:[] },
-    { id:5,  comp:'Ventilateur V-03',          crit:3, type:'Graisse', prod:'Total Multis EP 2',     qty:'80 g',  freq:'Trimestrielle', techId:4, date:'2025-07-01', loc:'Toit bâtiment A',     dur:'25 min', note:'',                                        done:false, hist:[] },
-    { id:6,  comp:'Convoyeur chaîne CX-02',    crit:3, type:'Graisse', prod:'Shell Gadus S2 V220',   qty:'200 g', freq:'Mensuelle',     techId:4, date:'2025-05-05', loc:'Ligne 3',             dur:'35 min', note:'Lubrifier chaîne + galets retour.',       done:false, hist:[] },
-    { id:7,  comp:'Pompe hydraulique H-01',    crit:1, type:'Huile',   prod:'Total Azolla ZS 46',    qty:'12 L',  freq:'Semestrielle',  techId:2, date:'2025-08-20', loc:'Atelier hydraulique', dur:'1h',     note:'Remplacer filtre haute pression.',        done:false, hist:[] },
-    { id:8,  comp:'Motoréducteur M-04',        crit:4, type:'Graisse', prod:'Mobil Polyrex EM',      qty:'50 g',  freq:'Annuelle',      techId:4, date:'2025-12-01', loc:'Zone emballage',      dur:'15 min', note:'',                                        done:false, hist:[] },
-    { id:9,  comp:"Vis d'entraînement VP-07",  crit:2, type:'Huile',   prod:'Klüber Lamora D-46',    qty:'1.5 L', freq:'Trimestrielle', techId:3, date:'2025-05-20', loc:'Atelier 2',           dur:'30 min', note:'Contrôler niveau avant vidange.',         done:false, hist:[] },
-    { id:10, comp:'Turbocompresseur TC-01',    crit:1, type:'Huile',   prod:'Mobil DTE 25 Ultra',    qty:'5 L',   freq:'Trimestrielle', techId:2, date:'2025-04-25', loc:'Salle moteurs',       dur:'1h',     note:'CRITIQUE: Ne pas démarrer sans huile.',   done:false, hist:[] }
+    // ── FFG 924 ──────────────────────────────────────────────────────────────
+    { id:1,  comp:'FFG 924', crit:1, type:'Huile',   prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-15', loc:'Atelier FFG',       dur:'45 min', note:'Vidange boîte de vitesses principale — vérifier niveau avant démarrage.', done:false, hist:[] },
+    { id:2,  comp:'FFG 924', crit:1, type:'Graisse', prod:'',  qty:'',      freq:'Hebdomadaire',  techId:T, date:'2026-01-05', loc:'Atelier FFG',       dur:'20 min', note:'Graissage roulements arbres impression + encrage.', done:false, hist:[] },
+    { id:3,  comp:'FFG 924', crit:2, type:'Huile',   prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-01-15', loc:'Atelier FFG',       dur:'30 min', note:'Vidange réducteur section découpe.', done:false, hist:[] },
+    { id:4,  comp:'FFG 924', crit:2, type:'Graisse', prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-15', loc:'Atelier FFG',       dur:'20 min', note:'Graissage chaînes transmission et galets guidage.', done:false, hist:[] },
+
+    // ── DRO HQP ──────────────────────────────────────────────────────────────
+    { id:5,  comp:'DRO HQP', crit:1, type:'Huile',   prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-02-01', loc:'Zone DRO',          dur:'1h',     note:'Vidange complète huile hydraulique — remplacer filtre retour.', done:false, hist:[] },
+    { id:6,  comp:'DRO HQP', crit:2, type:'Graisse', prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Zone DRO',          dur:'25 min', note:'Graissage roulements rouleaux transport.', done:false, hist:[] },
+    { id:7,  comp:'DRO HQP', crit:2, type:'Huile',   prod:'',  qty:'',      freq:'Semestrielle',  techId:T, date:'2026-03-01', loc:'Zone DRO',          dur:'45 min', note:'Vidange réducteur entraînement principal.', done:false, hist:[] },
+
+    // ── DRO 1 ────────────────────────────────────────────────────────────────
+    { id:8,  comp:'DRO 1',   crit:1, type:'Huile',   prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-02-10', loc:'Zone DRO',          dur:'1h',     note:'Vidange huile hydraulique centrale — contrôler pression circuit.', done:false, hist:[] },
+    { id:9,  comp:'DRO 1',   crit:2, type:'Graisse', prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-25', loc:'Zone DRO',          dur:'20 min', note:'Graissage roulements cylindres presseurs.', done:false, hist:[] },
+    { id:10, comp:'DRO 1',   crit:3, type:'Graisse', prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-02-10', loc:'Zone DRO',          dur:'20 min', note:'Graissage guidages linéaires table de réception.', done:false, hist:[] },
+
+    // ── ONDULEUSE ────────────────────────────────────────────────────────────
+    { id:11, comp:'ONDULEUSE', crit:1, type:'Huile',   prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Salle onduleuse',   dur:'1h30',   note:'Vidange huile réducteurs rouleaux cannelés — CRITIQUE: ne pas démarrer sans vérification.', done:false, hist:[] },
+    { id:12, comp:'ONDULEUSE', crit:1, type:'Graisse', prod:'',qty:'',      freq:'Hebdomadaire',  techId:T, date:'2026-01-05', loc:'Salle onduleuse',   dur:'30 min', note:'Graissage roulements rouleaux cannelés haut et bas.', done:false, hist:[] },
+    { id:13, comp:'ONDULEUSE', crit:1, type:'Huile',   prod:'',qty:'',      freq:'Trimestrielle', techId:T, date:'2026-03-01', loc:'Salle onduleuse',   dur:'1h',     note:'Vidange boîte vitesses entraînement principal.', done:false, hist:[] },
+    { id:14, comp:'ONDULEUSE', crit:2, type:'Graisse', prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Salle onduleuse',   dur:'30 min', note:'Graissage chaînes, tendeurs et pignons de transmission.', done:false, hist:[] },
+    { id:15, comp:'ONDULEUSE', crit:2, type:'Huile',   prod:'',qty:'',      freq:'Semestrielle',  techId:T, date:'2026-06-01', loc:'Salle onduleuse',   dur:'45 min', note:'Vidange réducteur table chauffante.', done:false, hist:[] },
+
+    // ── MARTIN 1224 ──────────────────────────────────────────────────────────
+    { id:16, comp:'MARTIN 1224', crit:1, type:'Huile',   prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Atelier Martin',    dur:'1h',     note:'Vidange huile boîte de vitesses — contrôler niveau huile lubrification automatique.', done:false, hist:[] },
+    { id:17, comp:'MARTIN 1224', crit:1, type:'Graisse', prod:'',qty:'',   freq:'Hebdomadaire',  techId:T, date:'2026-01-06', loc:'Atelier Martin',    dur:'25 min', note:'Graissage roulements arbres impression 4 couleurs.', done:false, hist:[] },
+    { id:18, comp:'MARTIN 1224', crit:2, type:'Huile',   prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-03-15', loc:'Atelier Martin',    dur:'45 min', note:'Vidange réducteur section découpe rotative.', done:false, hist:[] },
+    { id:19, comp:'MARTIN 1224', crit:2, type:'Graisse', prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Atelier Martin',    dur:'25 min', note:'Graissage chaînes et pignons transmission générale.', done:false, hist:[] },
+    { id:20, comp:'MARTIN 1224', crit:3, type:'Graisse', prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-02-20', loc:'Atelier Martin',    dur:'20 min', note:'Graissage guidages barres de liasse et table de sortie.', done:false, hist:[] },
+
+    // ── MARTIN 924 ───────────────────────────────────────────────────────────
+    { id:21, comp:'MARTIN 924', crit:1, type:'Huile',   prod:'',qty:'',    freq:'Mensuelle',     techId:T, date:'2026-01-22', loc:'Atelier Martin',    dur:'50 min', note:'Vidange huile boîte de vitesses principale.', done:false, hist:[] },
+    { id:22, comp:'MARTIN 924', crit:1, type:'Graisse', prod:'',qty:'',    freq:'Hebdomadaire',  techId:T, date:'2026-01-06', loc:'Atelier Martin',    dur:'20 min', note:'Graissage roulements arbres impression.', done:false, hist:[] },
+    { id:23, comp:'MARTIN 924', crit:2, type:'Huile',   prod:'',qty:'',    freq:'Trimestrielle', techId:T, date:'2026-03-22', loc:'Atelier Martin',    dur:'40 min', note:'Vidange réducteur section découpe.', done:false, hist:[] },
+    { id:24, comp:'MARTIN 924', crit:2, type:'Graisse', prod:'',qty:'',    freq:'Mensuelle',     techId:T, date:'2026-01-22', loc:'Atelier Martin',    dur:'20 min', note:'Graissage chaînes et pignons.', done:false, hist:[] },
+
+    // ── 1224 IMPRIMANTE ──────────────────────────────────────────────────────
+    { id:25, comp:'1224 IMPRIMANTE', crit:1, type:'Huile',   prod:'',qty:'', freq:'Mensuelle',   techId:T, date:'2026-01-18', loc:'Zone impression',   dur:'45 min', note:'Vidange huile centrale lubrification — vérifier filtres.', done:false, hist:[] },
+    { id:26, comp:'1224 IMPRIMANTE', crit:1, type:'Graisse', prod:'',qty:'', freq:'Hebdomadaire',techId:T, date:'2026-01-05', loc:'Zone impression',   dur:'20 min', note:'Graissage roulements cylindres impression et contre-pression.', done:false, hist:[] },
+    { id:27, comp:'1224 IMPRIMANTE', crit:2, type:'Graisse', prod:'',qty:'', freq:'Mensuelle',   techId:T, date:'2026-01-18', loc:'Zone impression',   dur:'20 min', note:'Graissage chaînes encrage et transmission teinte.', done:false, hist:[] },
+    { id:28, comp:'1224 IMPRIMANTE', crit:3, type:'Huile',   prod:'',qty:'', freq:'Semestrielle',techId:T, date:'2026-06-15', loc:'Zone impression',   dur:'30 min', note:'Vidange réducteur groupe encrage.', done:false, hist:[] },
+
+    // ── KLETT ────────────────────────────────────────────────────────────────
+    { id:29, comp:'KLETT', crit:1, type:'Huile',   prod:'',qty:'',          freq:'Trimestrielle', techId:T, date:'2026-02-05', loc:'Zone collage',      dur:'45 min', note:'Vidange réducteur principal entraînement — contrôler étanchéité joints.', done:false, hist:[] },
+    { id:30, comp:'KLETT', crit:2, type:'Graisse', prod:'',qty:'',          freq:'Mensuelle',     techId:T, date:'2026-01-12', loc:'Zone collage',      dur:'20 min', note:'Graissage roulements arbres encolleuse.', done:false, hist:[] },
+    { id:31, comp:'KLETT', crit:3, type:'Graisse', prod:'',qty:'',          freq:'Trimestrielle', techId:T, date:'2026-02-05', loc:'Zone collage',      dur:'15 min', note:'Graissage guidages table pliage.', done:false, hist:[] },
+
+    // ── MINILINE ─────────────────────────────────────────────────────────────
+    { id:32, comp:'MINILINE', crit:2, type:'Huile',   prod:'',qty:'',       freq:'Trimestrielle', techId:T, date:'2026-02-15', loc:'Ligne mini',        dur:'30 min', note:'Vidange réducteur entraînement bande.', done:false, hist:[] },
+    { id:33, comp:'MINILINE', crit:2, type:'Graisse', prod:'',qty:'',       freq:'Mensuelle',     techId:T, date:'2026-01-15', loc:'Ligne mini',        dur:'15 min', note:'Graissage roulements rouleaux convoyeur.', done:false, hist:[] },
+    { id:34, comp:'MINILINE', crit:3, type:'Graisse', prod:'',qty:'',       freq:'Trimestrielle', techId:T, date:'2026-02-15', loc:'Ligne mini',        dur:'15 min', note:'Graissage chaînes et guidages latéraux.', done:false, hist:[] },
+
+    // ── LANGSTONE ────────────────────────────────────────────────────────────
+    { id:35, comp:'LANGSTONE', crit:1, type:'Huile',   prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-25', loc:'Atelier Langstone', dur:'1h',     note:'Vidange huile boîte de vitesses + vérification niveau huile hydraulique.', done:false, hist:[] },
+    { id:36, comp:'LANGSTONE', crit:1, type:'Graisse', prod:'',qty:'',      freq:'Hebdomadaire',  techId:T, date:'2026-01-05', loc:'Atelier Langstone', dur:'25 min', note:'Graissage roulements rouleaux cannelés et rouleaux de chauffage.', done:false, hist:[] },
+    { id:37, comp:'LANGSTONE', crit:2, type:'Huile',   prod:'',qty:'',      freq:'Semestrielle',  techId:T, date:'2026-06-01', loc:'Atelier Langstone', dur:'45 min', note:'Vidange réducteur table de coupe transversale.', done:false, hist:[] },
+    { id:38, comp:'LANGSTONE', crit:2, type:'Graisse', prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-25', loc:'Atelier Langstone', dur:'25 min', note:'Graissage chaînes transmission et tendeurs.', done:false, hist:[] },
+
+    // ── BOBST LILA ───────────────────────────────────────────────────────────
+    { id:39, comp:'BOBST LILA', crit:1, type:'Huile',   prod:'',qty:'',     freq:'Trimestrielle', techId:T, date:'2026-03-01', loc:'Zone Bobst',        dur:'1h30',   note:'Vidange huile centrale lubrification — CRITIQUE: respecter préconisations Bobst.', done:false, hist:[] },
+    { id:40, comp:'BOBST LILA', crit:1, type:'Graisse', prod:'',qty:'',     freq:'Mensuelle',     techId:T, date:'2026-01-08', loc:'Zone Bobst',        dur:'30 min', note:'Graissage roulements platine et mécanisme de frappe.', done:false, hist:[] },
+    { id:41, comp:'BOBST LILA', crit:2, type:'Huile',   prod:'',qty:'',     freq:'Semestrielle',  techId:T, date:'2026-06-01', loc:'Zone Bobst',        dur:'1h',     note:'Vidange réducteur principal alimentation feuilles.', done:false, hist:[] },
+    { id:42, comp:'BOBST LILA', crit:2, type:'Graisse', prod:'',qty:'',     freq:'Mensuelle',     techId:T, date:'2026-01-08', loc:'Zone Bobst',        dur:'20 min', note:'Graissage guidages colonnes platine.', done:false, hist:[] },
+    { id:43, comp:'BOBST LILA', crit:3, type:'Graisse', prod:'',qty:'',     freq:'Trimestrielle', techId:T, date:'2026-03-01', loc:'Zone Bobst',        dur:'20 min', note:'Graissage chaînes convoyeur réception.', done:false, hist:[] },
+
+    // ── PICEUSE GAZELLA ──────────────────────────────────────────────────────
+    { id:44, comp:'PICEUSE GAZELLA', crit:2, type:'Huile',   prod:'',qty:'',freq:'Trimestrielle', techId:T, date:'2026-02-20', loc:'Zone piquage',      dur:'45 min', note:'Vidange réducteur entraînement tête de piquage.', done:false, hist:[] },
+    { id:45, comp:'PICEUSE GAZELLA', crit:2, type:'Graisse', prod:'',qty:'',freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Zone piquage',      dur:'20 min', note:'Graissage roulements arbres piquage et pliage.', done:false, hist:[] },
+    { id:46, comp:'PICEUSE GAZELLA', crit:3, type:'Graisse', prod:'',qty:'',freq:'Trimestrielle', techId:T, date:'2026-02-20', loc:'Zone piquage',      dur:'15 min', note:'Graissage chaînes convoyeur alimentation.', done:false, hist:[] },
+
+    // ── BOBST VISION ────────────────────────────────────────────────────────
+    { id:47, comp:'BOBST VISION', crit:1, type:'Huile',   prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-03-10', loc:'Zone Bobst',        dur:'1h30',   note:'Vidange huile centrale lubrification — CRITIQUE: respecter préconisations Bobst Vision.', done:false, hist:[] },
+    { id:48, comp:'BOBST VISION', crit:1, type:'Graisse', prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Zone Bobst',        dur:'30 min', note:'Graissage roulements platine, mécanisme refoulage et alimentation.', done:false, hist:[] },
+    { id:49, comp:'BOBST VISION', crit:2, type:'Huile',   prod:'',qty:'',   freq:'Semestrielle',  techId:T, date:'2026-06-10', loc:'Zone Bobst',        dur:'1h',     note:'Vidange réducteur principal + vérification circuit hydraulique.', done:false, hist:[] },
+    { id:50, comp:'BOBST VISION', crit:2, type:'Graisse', prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Zone Bobst',        dur:'25 min', note:'Graissage guidages colonnes et glissières platine.', done:false, hist:[] },
+    { id:51, comp:'BOBST VISION', crit:3, type:'Graisse', prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-03-10', loc:'Zone Bobst',        dur:'15 min', note:'Graissage chaînes convoyeur sortie et réception boîtes.', done:false, hist:[] },
   ];
 }
 
