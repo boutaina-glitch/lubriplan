@@ -1,21 +1,24 @@
-// ══════════════════════════════════════════════════════
-//  LubriPlan — app.js
-//  ✅ localStorage : toutes les modifications sauvegardées
-//  ✅ Import Excel (.xlsx) et CSV
-//  ✅ Gestion utilisateurs complète
-// ══════════════════════════════════════════════════════
+// LubriPlan — app.js
+// ✅ Filtre par machine (composant)
+// ✅ Export Excel (.xlsx) et CSV
+// ✅ Import Excel (.xlsx) et CSV
+// ✅ Téléchargement planning par machine
+// ✅ Recherche fonctionnelle
+// ✅ localStorage : toutes les modifications sauvegardées
 
 const LS_TASKS = 'lubriplan_tasks';
 const LS_USERS = 'lubriplan_users';
 
 const FREQ_M   = { Hebdomadaire:.25, Mensuelle:1, Bimestrielle:2, Trimestrielle:3, Semestrielle:6, Annuelle:12 };
 const MONTHS_S = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+const MONTHS_F = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
 let tasks = [], users = [], currentUser = null;
 let editTaskIdx = -1, editUserIdx = -1;
 let sortCol = 'crit', sortAsc = true;
 let calYear = new Date().getFullYear();
 let cfCb = null, currentView = 'liste';
+let calFilterMachine = '';
 
 // ── DONNÉES PAR DÉFAUT ──────────────────────────────────
 function defaultUsers() {
@@ -75,6 +78,11 @@ function resetAllData() {
 
 const nextTaskId = () => tasks.reduce((m,t) => Math.max(m,t.id), 0) + 1;
 const nextUserId = () => users.reduce((m,u) => Math.max(m,u.id), 0) + 1;
+
+// ── LISTE DES MACHINES (unique, triée) ─────────────────
+function getMachineList() {
+  return [...new Set(tasks.map(t => t.comp))].sort();
+}
 
 // ── AUTH ────────────────────────────────────────────────
 function doLogin() {
@@ -165,17 +173,36 @@ function getStats() {
   return { total, done, late, soon, crit1, pct: total ? Math.round(done/total*100) : 0 };
 }
 
+// ── GET FILTERED (avec filtre machine + recherche) ──────
 function getFiltered() {
   const fc  = document.getElementById('fltCrit')?.value || '';
   const ft  = document.getElementById('fltType')?.value || '';
   const fth = document.getElementById('fltTech')?.value || '';
   const fs  = document.getElementById('fltStat')?.value || '';
-  const q   = (document.getElementById('srch')?.value || '').toLowerCase();
+  const fm  = document.getElementById('fltMach')?.value || '';
+  const q   = (document.getElementById('srch')?.value || '').toLowerCase().trim();
   let list  = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
   return list.filter(t => {
     const s = getStatus(t);
-    return (!fc||t.crit==fc)&&(!ft||t.type===ft)&&(!fth||t.techId==fth)&&(!fs||s===fs)
-      &&(!q||t.comp.toLowerCase().includes(q)||getTechName(t.techId).toLowerCase().includes(q)||t.prod.toLowerCase().includes(q));
+    // Filtre machine (composant exact)
+    if (fm && t.comp !== fm) return false;
+    // Filtre criticité
+    if (fc && t.crit != fc) return false;
+    // Filtre type
+    if (ft && t.type !== ft) return false;
+    // Filtre technicien
+    if (fth && t.techId != fth) return false;
+    // Filtre statut
+    if (fs && s !== fs) return false;
+    // Recherche texte (composant, technicien, produit, localisation, remarque)
+    if (q) {
+      const searchFields = [
+        t.comp, t.prod, t.loc, t.note, t.freq, t.qty, t.type,
+        getTechName(t.techId), cLabel(t.crit), sLabel(getStatus(t)), fmtD(t.date)
+      ].map(x => (x||'').toLowerCase());
+      if (!searchFields.some(f => f.includes(q))) return false;
+    }
+    return true;
   }).sort((a,b) => {
     let va=a[sortCol], vb=b[sortCol];
     if (['crit','id'].includes(sortCol)) { va=+va; vb=+vb; }
@@ -189,6 +216,8 @@ function srt(col) { if (sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sor
 // ── LIST VIEW ────────────────────────────────────────────
 function buildListView() {
   const s=getStats(), all=getFiltered(), techs=users.filter(u=>u.role==='tech'&&u.active);
+  const machines=getMachineList();
+
   const statsHTML=`<div class="stats-grid">
     <div class="stat-card sc-blue"><div class="stat-label">Total tâches</div><div class="stat-value">${s.total}</div><div class="stat-sub">${s.pct}% complété</div><div class="prog-bar"><div class="prog-fill" style="width:${s.pct}%"></div></div></div>
     <div class="stat-card sc-green"><div class="stat-label">Effectuées</div><div class="stat-value" style="color:var(--green)">${s.done}</div><div class="stat-sub">cette période</div></div>
@@ -196,21 +225,32 @@ function buildListView() {
     <div class="stat-card sc-orange"><div class="stat-label">Échéance proche</div><div class="stat-value" style="color:var(--orange)">${s.soon}</div><div class="stat-sub">dans 14 jours</div></div>
     <div class="stat-card sc-yellow"><div class="stat-label">Criticité 1</div><div class="stat-value" style="color:var(--red)">${s.crit1}</div><div class="stat-sub">équipements critiques</div></div>
   </div>`;
+
   const adminBtns=isAdmin()?`<div class="ctrl-actions">
     <button class="btn btn-s btn-sm" onclick="resetDone()">↺ Réinitialiser</button>
-    <button class="btn btn-s btn-sm" onclick="exportCSV()">📤 Export</button>
+    <div class="export-group">
+      <button class="btn btn-s btn-sm" onclick="exportCSV()">📤 CSV</button>
+      <button class="btn btn-s btn-sm" onclick="exportXLSX()">📊 Excel</button>
+    </div>
     <button class="btn btn-s btn-sm" onclick="document.getElementById('fileInput').click()">📥 Import</button>
     <button class="btn btn-p" onclick="openTaskModal()">+ Nouvelle tâche</button>
   </div>`:'';
+
   const techFilter=isAdmin()?`<select id="fltTech" onchange="render()"><option value="">Tous techniciens</option>${techs.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>`:'';
+
+  // Filtre machine
+  const machineFilter=`<select id="fltMach" onchange="render()" style="max-width:200px"><option value="">Toutes machines</option>${machines.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>`;
+
   const ctrlHTML=`<div class="ctrl-bar">
     <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" id="srch" placeholder="Rechercher..." oninput="render()"/></div>
+    ${machineFilter}
     <select id="fltCrit" onchange="render()"><option value="">Toutes criticités</option><option value="1">🔴 Critique</option><option value="2">🟠 Haute</option><option value="3">🟡 Moyenne</option><option value="4">🟢 Faible</option></select>
     <select id="fltType" onchange="render()"><option value="">Tous types</option><option value="Huile">Huile</option><option value="Graisse">Graisse</option></select>
     ${techFilter}
     <select id="fltStat" onchange="render()"><option value="">Tous statuts</option><option value="late">En retard</option><option value="soon">Bientôt</option><option value="pending">Planifié</option><option value="done">Effectué</option></select>
     ${adminBtns}
   </div>`;
+
   const th=(k,l)=>`<th class="${sortCol===k?'sorted':''}" onclick="srt('${k}')">${l}${sortCol===k?' '+(sortAsc?'↑':'↓'):''}</th>`;
   const theadHTML=`${th('comp','Composant')} ${th('crit','Criticité')} ${th('type','Type')} ${th('prod','Produit')} ${th('freq','Fréquence')} ${isAdmin()?th('techId','Technicien'):''} ${th('date','Échéance')} <th>Statut</th> <th style="text-align:center">Fait</th> ${isAdmin()?'<th></th>':''}`;
   const rows=all.length?all.map(t=>{
@@ -233,10 +273,45 @@ function buildListView() {
 
 // ── CALENDAR VIEW ────────────────────────────────────────
 function buildCalView() {
-  const all=getFiltered(), now=new Date();
-  const header=`<div class="cal-header"><div class="year-nav"><button onclick="calYear--;render()">◀ Précédent</button><span class="year-label">${calYear}</span><button onclick="calYear++;render()">Suivant ▶</button></div><div class="cal-legend"><span><span class="leg-dot" style="background:#185FA5"></span>Planifié</span><span><span class="leg-dot" style="background:var(--green)"></span>Effectué</span><span><span class="leg-dot" style="background:var(--red)"></span>En retard</span></div></div>`;
+  const machines = getMachineList();
+  const all = getFiltered(); // utilise les filtres actuels
+
+  // Sélecteur machine pour le planning
+  const machSelect = `<select id="calMachFilter" onchange="calFilterMachine=this.value;render()" style="font-family:var(--font);font-size:13px;padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);outline:none;height:34px">
+    <option value="">Toutes les machines</option>
+    ${machines.map(m=>`<option value="${esc(m)}"${calFilterMachine===m?' selected':''}>${esc(m)}</option>`).join('')}
+  </select>`;
+
+  // Bouton télécharger planning machine sélectionnée
+  const dlBtn = calFilterMachine
+    ? `<button class="btn btn-s btn-sm" onclick="downloadMachinePlanning('${esc(calFilterMachine).replace(/'/g,"\\'")}')">📥 Télécharger planning machine</button>`
+    : `<button class="btn btn-s btn-sm" onclick="downloadAllPlannings()">📥 Télécharger tout (Excel)</button>`;
+
+  const header=`<div class="cal-header">
+    <div class="year-nav">
+      <button onclick="calYear--;render()">◀ Précédent</button>
+      <span class="year-label">${calYear}</span>
+      <button onclick="calYear++;render()">Suivant ▶</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      ${machSelect}
+      ${dlBtn}
+    </div>
+    <div class="cal-legend">
+      <span><span class="leg-dot" style="background:#185FA5"></span>Planifié</span>
+      <span><span class="leg-dot" style="background:var(--green)"></span>Effectué</span>
+      <span><span class="leg-dot" style="background:var(--red)"></span>En retard</span>
+    </div>
+  </div>`;
+
+  // Filtrer par machine si sélectionnée
+  let displayTasks = calFilterMachine
+    ? tasks.filter(t => t.comp === calFilterMachine)
+    : (isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id));
+
+  const now=new Date();
   const ths=`<th>Composant</th>${MONTHS_S.map(m=>`<th>${m}</th>`).join('')}`;
-  const rows=all.map(t=>{
+  const rows=displayTasks.map(t=>{
     const si=tasks.indexOf(t);
     const cells=Array.from({length:12},(_,mo)=>{
       if(!isInMonth(t,mo,calYear))return`<td><div style="display:flex;align-items:center;justify-content:center"><div class="cal-dot d-empty"></div></div></td>`;
@@ -246,7 +321,7 @@ function buildCalView() {
     }).join('');
     return`<tr><td><div style="font-size:12px;font-weight:500"><span class="badge ${cClass(t.crit)}" style="font-size:10px;padding:1px 5px;margin-right:4px">${t.crit}</span>${esc(t.comp.substring(0,22))}${t.comp.length>22?'…':''}</div><div style="font-size:10px;color:var(--text3)">${esc(getTechName(t.techId))}</div></td>${cells}</tr>`;
   }).join('');
-  return header+`<div class="cal-scroll"><table class="cal-table"><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return header+`<div class="cal-scroll"><table class="cal-table"><thead><tr>${ths}</tr></thead><tbody>${rows||'<tr><td colspan="13"><div class="empty"><div class="empty-icon">📅</div><p>Aucune tâche pour cette machine</p></div></td></tr>'}</tbody></table></div>`;
 }
 
 function isInMonth(t,mo,yr) {
@@ -261,6 +336,102 @@ function calClick(si) {
   showCf('Confirmer intervention',`Marquer <strong>${esc(t.comp)}</strong> comme effectué ?`,()=>{
     tasks[si].done=true; tasks[si].hist.push(today()); saveTasks(); toast('Tâche marquée effectuée'); render();
   });
+}
+
+// ── TÉLÉCHARGEMENT PLANNING PAR MACHINE ─────────────────
+function downloadMachinePlanning(machineName) {
+  const machineTasks = tasks.filter(t => t.comp === machineName);
+  if (!machineTasks.length) { toast('Aucune tâche pour cette machine', 'err'); return; }
+
+  if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // Feuille 1 : Infos machine
+  const infoRows = [
+    ['PLANNING DE GRAISSAGE & VIDANGE', ''],
+    ['Machine :', machineName],
+    ['Exporté le :', fmtD(today())],
+    ['Année :', calYear],
+    [''],
+    ['Technicien(s) :', [...new Set(machineTasks.map(t=>getTechName(t.techId)))].join(', ')],
+  ];
+  const wsInfo = XLSX.utils.aoa_to_sheet(infoRows);
+  XLSX.utils.book_append_sheet(wb, wsInfo, 'Infos');
+
+  // Feuille 2 : Tâches détaillées
+  const header = ['Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Prochaine échéance','Localisation','Durée','Remarques','Statut'];
+  const rows = machineTasks.map(t => [
+    t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'', t.freq,
+    getTechName(t.techId), fmtD(t.date), t.loc||'', t.dur||'', t.note||'',
+    sLabel(getStatus(t))
+  ]);
+  const wsTasks = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  // Largeurs colonnes
+  wsTasks['!cols'] = [20,12,10,25,10,14,18,14,18,10,30,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, wsTasks, 'Tâches');
+
+  // Feuille 3 : Calendrier mensuel pour l'année
+  const calHeader = ['Composant', ...MONTHS_F];
+  const calRows = machineTasks.map(t => {
+    const row = [t.comp];
+    for (let mo = 0; mo < 12; mo++) {
+      row.push(isInMonth(t, mo, calYear) ? (t.done ? '✓ Effectué' : 'À faire') : '');
+    }
+    return row;
+  });
+  const wsCal = XLSX.utils.aoa_to_sheet([calHeader, ...calRows]);
+  wsCal['!cols'] = [{wch:25}, ...Array(12).fill({wch:12})];
+  XLSX.utils.book_append_sheet(wb, wsCal, `Planning ${calYear}`);
+
+  // Feuille 4 : Historique
+  const histHeader = ['Composant','Date intervention','Produit','Technicien','Remarques'];
+  const histRows = [];
+  machineTasks.forEach(t => {
+    (t.hist||[]).forEach(d => histRows.push([t.comp, fmtD(d), t.prod, getTechName(t.techId), t.note||'']));
+  });
+  if (histRows.length) {
+    const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
+    wsHist['!cols'] = [{wch:25},{wch:14},{wch:25},{wch:18},{wch:30}];
+    XLSX.utils.book_append_sheet(wb, wsHist, 'Historique');
+  }
+
+  const safeName = machineName.replace(/[/\\:*?"<>|]/g,'_');
+  XLSX.writeFile(wb, `LubriPlan_${safeName}_${calYear}.xlsx`);
+  toast(`📊 Planning "${machineName}" téléchargé`);
+}
+
+function downloadAllPlannings() {
+  if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // Une feuille par machine
+  getMachineList().forEach(machineName => {
+    const machineTasks = tasks.filter(t => t.comp === machineName);
+    const calHeader = ['Composant', 'Type', 'Produit', 'Fréquence', 'Technicien', ...MONTHS_F, 'Statut'];
+    const calRows = machineTasks.map(t => {
+      const row = [t.comp, t.type, t.prod, t.freq, getTechName(t.techId)];
+      for (let mo = 0; mo < 12; mo++) {
+        row.push(isInMonth(t, mo, calYear) ? (t.done ? '✓' : '●') : '');
+      }
+      row.push(sLabel(getStatus(t)));
+      return row;
+    });
+    const ws = XLSX.utils.aoa_to_sheet([calHeader, ...calRows]);
+    ws['!cols'] = [{wch:22},{wch:10},{wch:22},{wch:14},{wch:18},...Array(12).fill({wch:6}),{wch:12}];
+    const sheetName = machineName.substring(0,31).replace(/[/\\:*?"<>[\]]/g,'_');
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  // Récapitulatif
+  const recapHeader = ['Machine','Criticité','Type','Produit','Fréquence','Technicien','Prochaine échéance','Statut'];
+  const recapRows = tasks.map(t => [t.comp, cLabel(t.crit), t.type, t.prod, t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))]);
+  const wsRecap = XLSX.utils.aoa_to_sheet([recapHeader, ...recapRows]);
+  wsRecap['!cols'] = [{wch:25},{wch:12},{wch:10},{wch:25},{wch:14},{wch:18},{wch:14},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsRecap, 'Récapitulatif');
+
+  XLSX.writeFile(wb, `LubriPlan_Planning_Complet_${calYear}.xlsx`);
+  toast('📊 Planning complet téléchargé');
 }
 
 // ── TECH VIEW ────────────────────────────────────────────
@@ -389,16 +560,70 @@ function exportCSV(){
   a.download=`lubriplan_${today()}.csv`;a.click();toast('Export CSV téléchargé');
 }
 
+// ── EXPORT EXCEL (XLSX) ──────────────────────────────────
+function exportXLSX() {
+  if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // Feuille 1 : Toutes les tâches
+  const header = ['ID','Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Localisation','Durée','Remarques','Effectué','Historique'];
+  const rows = tasks.map(t => [
+    t.id, t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'',
+    t.freq, getTechName(t.techId), fmtD(t.date),
+    t.loc||'', t.dur||'', t.note||'',
+    t.done ? 'Oui' : 'Non',
+    (t.hist||[]).map(fmtD).join(' | ')
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  ws['!cols'] = [5,25,12,10,25,10,14,18,12,20,10,30,10,20].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws, 'Tâches');
+
+  // Feuille 2 : Planning annuel (toutes machines, mois en colonnes)
+  const planHeader = ['Machine','Type','Produit','Fréquence','Technicien',...MONTHS_F];
+  const planRows = tasks.map(t => {
+    const row = [t.comp, t.type, t.prod, t.freq, getTechName(t.techId)];
+    for (let mo = 0; mo < 12; mo++) {
+      row.push(isInMonth(t, mo, new Date().getFullYear()) ? (t.done ? '✓' : '●') : '');
+    }
+    return row;
+  });
+  const wsPlan = XLSX.utils.aoa_to_sheet([planHeader, ...planRows]);
+  wsPlan['!cols'] = [{wch:25},{wch:10},{wch:22},{wch:14},{wch:18},...Array(12).fill({wch:10})];
+  XLSX.utils.book_append_sheet(wb, wsPlan, `Planning ${new Date().getFullYear()}`);
+
+  // Feuille 3 : Statistiques
+  const statRows = [
+    ['Statistiques LubriPlan', ''],
+    ['Total tâches', tasks.length],
+    ['Tâches effectuées', tasks.filter(t=>t.done).length],
+    ['Tâches en retard', tasks.filter(t=>getStatus(t)==='late').length],
+    ['Échéance proche (14j)', tasks.filter(t=>getStatus(t)==='soon').length],
+    ['Criticité 1 (critique)', tasks.filter(t=>t.crit===1).length],
+    [''],
+    ['Par technicien','Nb tâches','Effectuées'],
+    ...users.filter(u=>u.role==='tech').map(u => {
+      const tl = tasks.filter(t=>t.techId===u.id);
+      return [u.name, tl.length, tl.filter(t=>t.done).length];
+    })
+  ];
+  const wsStat = XLSX.utils.aoa_to_sheet(statRows);
+  wsStat['!cols'] = [{wch:28},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsStat, 'Statistiques');
+
+  XLSX.writeFile(wb, `LubriPlan_Export_${today()}.xlsx`);
+  toast('📊 Export Excel téléchargé');
+}
+
 // ── IMPORT EXCEL / CSV ───────────────────────────────────
 function importFile(e) {
   const file=e.target.files[0]; if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
-  if(ext==='xlsx'||ext==='xls') importXLSX(file);
+  if(ext==='xlsx'||ext==='xls') importXLSX_file(file);
   else importCSVfile(file);
   e.target.value='';
 }
 
-function importXLSX(file) {
+function importXLSX_file(file) {
   const reader=new FileReader();
   reader.onload=function(ev){
     try {
