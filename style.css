@@ -333,7 +333,22 @@ body {
   color: var(--text3);
   pointer-events: none;
 }
-.ctrl-actions { display: flex; gap: 8px; margin-left: auto; }
+.ctrl-actions { display: flex; gap: 8px; margin-left: auto; align-items: center; flex-wrap: wrap; }
+
+/* Groupe boutons export CSV + Excel côte à côte */
+.export-group {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.export-group .btn {
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--border2);
+}
+.export-group .btn:last-child { border-right: none; }
 
 /* ════════════════════════════════════════
    TABLE
