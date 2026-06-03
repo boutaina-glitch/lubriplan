@@ -1,9 +1,8 @@
 // LubriPlan — app.js
 // ✅ Filtre par machine (localisation)
-// ✅ Export Excel (.xlsx) et CSV
-// ✅ Import Excel (.xlsx) et CSV
-// ✅ Téléchargement planning par machine
-// ✅ Recherche fonctionnelle
+// ✅ Planning par semaines S1-S52 avec couleurs (G=jaune, V=rouge/bleu)
+// ✅ Export Excel coloré par semaines
+// ✅ Historique restructuré en tableau
 // ✅ localStorage : toutes les modifications sauvegardées
 
 const LS_TASKS = 'lubriplan_tasks';
@@ -19,6 +18,7 @@ let sortCol = 'crit', sortAsc = true;
 let calYear = new Date().getFullYear();
 let cfCb = null, currentView = 'liste';
 let calFilterMachine = '';
+let calViewType = 'graisse'; // 'graisse' ou 'vidange'
 
 // ── DONNÉES PAR DÉFAUT ──────────────────────────────────
 function defaultUsers() {
@@ -29,79 +29,54 @@ function defaultUsers() {
 }
 
 function defaultTasks() {
-  const T = 2; // techId Laawam.b
+  const T = 2;
   return [
-    // ── FFG 924 ──────────────────────────────────────────────────────────────
     { id:1,  comp:'FFG 924', crit:1, type:'Huile',   prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-15', loc:'Atelier FFG',       dur:'45 min', note:'Vidange boîte de vitesses principale — vérifier niveau avant démarrage.', done:false, hist:[] },
     { id:2,  comp:'FFG 924', crit:1, type:'Graisse', prod:'',  qty:'',      freq:'Hebdomadaire',  techId:T, date:'2026-01-05', loc:'Atelier FFG',       dur:'20 min', note:'Graissage roulements arbres impression + encrage.', done:false, hist:[] },
     { id:3,  comp:'FFG 924', crit:2, type:'Huile',   prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-01-15', loc:'Atelier FFG',       dur:'30 min', note:'Vidange réducteur section découpe.', done:false, hist:[] },
     { id:4,  comp:'FFG 924', crit:2, type:'Graisse', prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-15', loc:'Atelier FFG',       dur:'20 min', note:'Graissage chaînes transmission et galets guidage.', done:false, hist:[] },
-
-    // ── DRO HQP ──────────────────────────────────────────────────────────────
     { id:5,  comp:'DRO HQP', crit:1, type:'Huile',   prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-02-01', loc:'Zone DRO',          dur:'1h',     note:'Vidange complète huile hydraulique — remplacer filtre retour.', done:false, hist:[] },
     { id:6,  comp:'DRO HQP', crit:2, type:'Graisse', prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Zone DRO',          dur:'25 min', note:'Graissage roulements rouleaux transport.', done:false, hist:[] },
     { id:7,  comp:'DRO HQP', crit:2, type:'Huile',   prod:'',  qty:'',      freq:'Semestrielle',  techId:T, date:'2026-03-01', loc:'Zone DRO',          dur:'45 min', note:'Vidange réducteur entraînement principal.', done:false, hist:[] },
-
-    // ── DRO 1 ────────────────────────────────────────────────────────────────
     { id:8,  comp:'DRO 1',   crit:1, type:'Huile',   prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-02-10', loc:'Zone DRO',          dur:'1h',     note:'Vidange huile hydraulique centrale — contrôler pression circuit.', done:false, hist:[] },
     { id:9,  comp:'DRO 1',   crit:2, type:'Graisse', prod:'',  qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-25', loc:'Zone DRO',          dur:'20 min', note:'Graissage roulements cylindres presseurs.', done:false, hist:[] },
     { id:10, comp:'DRO 1',   crit:3, type:'Graisse', prod:'',  qty:'',      freq:'Trimestrielle', techId:T, date:'2026-02-10', loc:'Zone DRO',          dur:'20 min', note:'Graissage guidages linéaires table de réception.', done:false, hist:[] },
-
-    // ── ONDULEUSE ────────────────────────────────────────────────────────────
     { id:11, comp:'ONDULEUSE', crit:1, type:'Huile',   prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Salle onduleuse',   dur:'1h30',   note:'Vidange huile réducteurs rouleaux cannelés — CRITIQUE: ne pas démarrer sans vérification.', done:false, hist:[] },
     { id:12, comp:'ONDULEUSE', crit:1, type:'Graisse', prod:'',qty:'',      freq:'Hebdomadaire',  techId:T, date:'2026-01-05', loc:'Salle onduleuse',   dur:'30 min', note:'Graissage roulements rouleaux cannelés haut et bas.', done:false, hist:[] },
     { id:13, comp:'ONDULEUSE', crit:1, type:'Huile',   prod:'',qty:'',      freq:'Trimestrielle', techId:T, date:'2026-03-01', loc:'Salle onduleuse',   dur:'1h',     note:'Vidange boîte vitesses entraînement principal.', done:false, hist:[] },
     { id:14, comp:'ONDULEUSE', crit:2, type:'Graisse', prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Salle onduleuse',   dur:'30 min', note:'Graissage chaînes, tendeurs et pignons de transmission.', done:false, hist:[] },
     { id:15, comp:'ONDULEUSE', crit:2, type:'Huile',   prod:'',qty:'',      freq:'Semestrielle',  techId:T, date:'2026-06-01', loc:'Salle onduleuse',   dur:'45 min', note:'Vidange réducteur table chauffante.', done:false, hist:[] },
-
-    // ── MARTIN 1224 ──────────────────────────────────────────────────────────
     { id:16, comp:'MARTIN 1224', crit:1, type:'Huile',   prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Atelier Martin',    dur:'1h',     note:'Vidange huile boîte de vitesses — contrôler niveau huile lubrification automatique.', done:false, hist:[] },
     { id:17, comp:'MARTIN 1224', crit:1, type:'Graisse', prod:'',qty:'',   freq:'Hebdomadaire',  techId:T, date:'2026-01-06', loc:'Atelier Martin',    dur:'25 min', note:'Graissage roulements arbres impression 4 couleurs.', done:false, hist:[] },
     { id:18, comp:'MARTIN 1224', crit:2, type:'Huile',   prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-03-15', loc:'Atelier Martin',    dur:'45 min', note:'Vidange réducteur section découpe rotative.', done:false, hist:[] },
     { id:19, comp:'MARTIN 1224', crit:2, type:'Graisse', prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Atelier Martin',    dur:'25 min', note:'Graissage chaînes et pignons transmission générale.', done:false, hist:[] },
     { id:20, comp:'MARTIN 1224', crit:3, type:'Graisse', prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-02-20', loc:'Atelier Martin',    dur:'20 min', note:'Graissage guidages barres de liasse et table de sortie.', done:false, hist:[] },
-
-    // ── MARTIN 924 ───────────────────────────────────────────────────────────
     { id:21, comp:'MARTIN 924', crit:1, type:'Huile',   prod:'',qty:'',    freq:'Mensuelle',     techId:T, date:'2026-01-22', loc:'Atelier Martin',    dur:'50 min', note:'Vidange huile boîte de vitesses principale.', done:false, hist:[] },
     { id:22, comp:'MARTIN 924', crit:1, type:'Graisse', prod:'',qty:'',    freq:'Hebdomadaire',  techId:T, date:'2026-01-06', loc:'Atelier Martin',    dur:'20 min', note:'Graissage roulements arbres impression.', done:false, hist:[] },
     { id:23, comp:'MARTIN 924', crit:2, type:'Huile',   prod:'',qty:'',    freq:'Trimestrielle', techId:T, date:'2026-03-22', loc:'Atelier Martin',    dur:'40 min', note:'Vidange réducteur section découpe.', done:false, hist:[] },
     { id:24, comp:'MARTIN 924', crit:2, type:'Graisse', prod:'',qty:'',    freq:'Mensuelle',     techId:T, date:'2026-01-22', loc:'Atelier Martin',    dur:'20 min', note:'Graissage chaînes et pignons.', done:false, hist:[] },
-
-    // ── 1224 IMPRIMANTE ──────────────────────────────────────────────────────
     { id:25, comp:'1224 IMPRIMANTE', crit:1, type:'Huile',   prod:'',qty:'', freq:'Mensuelle',   techId:T, date:'2026-01-18', loc:'Zone impression',   dur:'45 min', note:'Vidange huile centrale lubrification — vérifier filtres.', done:false, hist:[] },
     { id:26, comp:'1224 IMPRIMANTE', crit:1, type:'Graisse', prod:'',qty:'', freq:'Hebdomadaire',techId:T, date:'2026-01-05', loc:'Zone impression',   dur:'20 min', note:'Graissage roulements cylindres impression et contre-pression.', done:false, hist:[] },
     { id:27, comp:'1224 IMPRIMANTE', crit:2, type:'Graisse', prod:'',qty:'', freq:'Mensuelle',   techId:T, date:'2026-01-18', loc:'Zone impression',   dur:'20 min', note:'Graissage chaînes encrage et transmission teinte.', done:false, hist:[] },
     { id:28, comp:'1224 IMPRIMANTE', crit:3, type:'Huile',   prod:'',qty:'', freq:'Semestrielle',techId:T, date:'2026-06-15', loc:'Zone impression',   dur:'30 min', note:'Vidange réducteur groupe encrage.', done:false, hist:[] },
-
-    // ── KLETT ────────────────────────────────────────────────────────────────
     { id:29, comp:'KLETT', crit:1, type:'Huile',   prod:'',qty:'',          freq:'Trimestrielle', techId:T, date:'2026-02-05', loc:'Zone collage',      dur:'45 min', note:'Vidange réducteur principal entraînement — contrôler étanchéité joints.', done:false, hist:[] },
     { id:30, comp:'KLETT', crit:2, type:'Graisse', prod:'',qty:'',          freq:'Mensuelle',     techId:T, date:'2026-01-12', loc:'Zone collage',      dur:'20 min', note:'Graissage roulements arbres encolleuse.', done:false, hist:[] },
     { id:31, comp:'KLETT', crit:3, type:'Graisse', prod:'',qty:'',          freq:'Trimestrielle', techId:T, date:'2026-02-05', loc:'Zone collage',      dur:'15 min', note:'Graissage guidages table pliage.', done:false, hist:[] },
-
-    // ── MINILINE ─────────────────────────────────────────────────────────────
     { id:32, comp:'MINILINE', crit:2, type:'Huile',   prod:'',qty:'',       freq:'Trimestrielle', techId:T, date:'2026-02-15', loc:'Ligne mini',        dur:'30 min', note:'Vidange réducteur entraînement bande.', done:false, hist:[] },
     { id:33, comp:'MINILINE', crit:2, type:'Graisse', prod:'',qty:'',       freq:'Mensuelle',     techId:T, date:'2026-01-15', loc:'Ligne mini',        dur:'15 min', note:'Graissage roulements rouleaux convoyeur.', done:false, hist:[] },
     { id:34, comp:'MINILINE', crit:3, type:'Graisse', prod:'',qty:'',       freq:'Trimestrielle', techId:T, date:'2026-02-15', loc:'Ligne mini',        dur:'15 min', note:'Graissage chaînes et guidages latéraux.', done:false, hist:[] },
-
-    // ── LANGSTONE ────────────────────────────────────────────────────────────
     { id:35, comp:'LANGSTONE', crit:1, type:'Huile',   prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-25', loc:'Atelier Langstone', dur:'1h',     note:'Vidange huile boîte de vitesses + vérification niveau huile hydraulique.', done:false, hist:[] },
     { id:36, comp:'LANGSTONE', crit:1, type:'Graisse', prod:'',qty:'',      freq:'Hebdomadaire',  techId:T, date:'2026-01-05', loc:'Atelier Langstone', dur:'25 min', note:'Graissage roulements rouleaux cannelés et rouleaux de chauffage.', done:false, hist:[] },
     { id:37, comp:'LANGSTONE', crit:2, type:'Huile',   prod:'',qty:'',      freq:'Semestrielle',  techId:T, date:'2026-06-01', loc:'Atelier Langstone', dur:'45 min', note:'Vidange réducteur table de coupe transversale.', done:false, hist:[] },
     { id:38, comp:'LANGSTONE', crit:2, type:'Graisse', prod:'',qty:'',      freq:'Mensuelle',     techId:T, date:'2026-01-25', loc:'Atelier Langstone', dur:'25 min', note:'Graissage chaînes transmission et tendeurs.', done:false, hist:[] },
-
-    // ── BOBST LILA ───────────────────────────────────────────────────────────
     { id:39, comp:'BOBST LILA', crit:1, type:'Huile',   prod:'',qty:'',     freq:'Trimestrielle', techId:T, date:'2026-03-01', loc:'Zone Bobst',        dur:'1h30',   note:'Vidange huile centrale lubrification — CRITIQUE: respecter préconisations Bobst.', done:false, hist:[] },
     { id:40, comp:'BOBST LILA', crit:1, type:'Graisse', prod:'',qty:'',     freq:'Mensuelle',     techId:T, date:'2026-01-08', loc:'Zone Bobst',        dur:'30 min', note:'Graissage roulements platine et mécanisme de frappe.', done:false, hist:[] },
     { id:41, comp:'BOBST LILA', crit:2, type:'Huile',   prod:'',qty:'',     freq:'Semestrielle',  techId:T, date:'2026-06-01', loc:'Zone Bobst',        dur:'1h',     note:'Vidange réducteur principal alimentation feuilles.', done:false, hist:[] },
     { id:42, comp:'BOBST LILA', crit:2, type:'Graisse', prod:'',qty:'',     freq:'Mensuelle',     techId:T, date:'2026-01-08', loc:'Zone Bobst',        dur:'20 min', note:'Graissage guidages colonnes platine.', done:false, hist:[] },
     { id:43, comp:'BOBST LILA', crit:3, type:'Graisse', prod:'',qty:'',     freq:'Trimestrielle', techId:T, date:'2026-03-01', loc:'Zone Bobst',        dur:'20 min', note:'Graissage chaînes convoyeur réception.', done:false, hist:[] },
-
-    // ── PICEUSE GAZELLA ──────────────────────────────────────────────────────
     { id:44, comp:'PICEUSE GAZELLA', crit:2, type:'Huile',   prod:'',qty:'',freq:'Trimestrielle', techId:T, date:'2026-02-20', loc:'Zone piquage',      dur:'45 min', note:'Vidange réducteur entraînement tête de piquage.', done:false, hist:[] },
     { id:45, comp:'PICEUSE GAZELLA', crit:2, type:'Graisse', prod:'',qty:'',freq:'Mensuelle',     techId:T, date:'2026-01-20', loc:'Zone piquage',      dur:'20 min', note:'Graissage roulements arbres piquage et pliage.', done:false, hist:[] },
     { id:46, comp:'PICEUSE GAZELLA', crit:3, type:'Graisse', prod:'',qty:'',freq:'Trimestrielle', techId:T, date:'2026-02-20', loc:'Zone piquage',      dur:'15 min', note:'Graissage chaînes convoyeur alimentation.', done:false, hist:[] },
-
-    // ── BOBST VISION ────────────────────────────────────────────────────────
     { id:47, comp:'BOBST VISION', crit:1, type:'Huile',   prod:'',qty:'',   freq:'Trimestrielle', techId:T, date:'2026-03-10', loc:'Zone Bobst',        dur:'1h30',   note:'Vidange huile centrale lubrification — CRITIQUE: respecter préconisations Bobst Vision.', done:false, hist:[] },
     { id:48, comp:'BOBST VISION', crit:1, type:'Graisse', prod:'',qty:'',   freq:'Mensuelle',     techId:T, date:'2026-01-10', loc:'Zone Bobst',        dur:'30 min', note:'Graissage roulements platine, mécanisme refoulage et alimentation.', done:false, hist:[] },
     { id:49, comp:'BOBST VISION', crit:2, type:'Huile',   prod:'',qty:'',   freq:'Semestrielle',  techId:T, date:'2026-06-10', loc:'Zone Bobst',        dur:'1h',     note:'Vidange réducteur principal + vérification circuit hydraulique.', done:false, hist:[] },
@@ -117,34 +92,20 @@ function loadData() {
     const savedTasks = localStorage.getItem(LS_TASKS);
     users = savedUsers ? JSON.parse(savedUsers) : defaultUsers();
     tasks = savedTasks ? JSON.parse(savedTasks) : defaultTasks();
-  } catch(e) {
-    users = defaultUsers();
-    tasks = defaultTasks();
-  }
+  } catch(e) { users = defaultUsers(); tasks = defaultTasks(); }
 }
-
-function saveUsers() {
-  try { localStorage.setItem(LS_USERS, JSON.stringify(users)); } catch(e) {}
-}
-
-function saveTasks() {
-  try { localStorage.setItem(LS_TASKS, JSON.stringify(tasks)); } catch(e) {}
-}
-
+function saveUsers() { try { localStorage.setItem(LS_USERS, JSON.stringify(users)); } catch(e) {} }
+function saveTasks() { try { localStorage.setItem(LS_TASKS, JSON.stringify(tasks)); } catch(e) {} }
 function resetAllData() {
   showCf('Réinitialiser toutes les données', 'Supprimer toutes les tâches et revenir aux données par défaut ?', () => {
-    localStorage.removeItem(LS_TASKS);
-    localStorage.removeItem(LS_USERS);
-    loadData();
-    toast('Données réinitialisées');
-    render();
+    localStorage.removeItem(LS_TASKS); localStorage.removeItem(LS_USERS);
+    loadData(); toast('Données réinitialisées'); render();
   });
 }
-
 const nextTaskId = () => tasks.reduce((m,t) => Math.max(m,t.id), 0) + 1;
 const nextUserId = () => users.reduce((m,u) => Math.max(m,u.id), 0) + 1;
 
-// ── LISTE DES MACHINES (unique, triée) — basée sur t.loc ─
+// ── LISTE DES MACHINES (basée sur t.loc) ───────────────
 function getMachineList() {
   return [...new Set(tasks.map(t => t.loc).filter(Boolean))].sort();
 }
@@ -159,9 +120,7 @@ function doLogin() {
   const u = users.find(x => x.login === loginVal && x.active);
   if (!u || u.pwd !== pwd) {
     errEl.textContent = '❌ Identifiant ou mot de passe incorrect.';
-    document.getElementById('loginPwd').value = '';
-    document.getElementById('loginPwd').focus();
-    return;
+    document.getElementById('loginPwd').value = ''; document.getElementById('loginPwd').focus(); return;
   }
   currentUser = u;
   document.getElementById('loginScreen').style.display = 'none';
@@ -171,16 +130,13 @@ function doLogin() {
   document.getElementById('userRole').textContent = currentUser.role === 'admin' ? 'Admin' : 'Technicien';
   switchView('liste');
 }
-
 function doLogout() {
   currentUser = null;
   document.getElementById('app').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
-  document.getElementById('loginUser').value = '';
-  document.getElementById('loginPwd').value  = '';
+  document.getElementById('loginUser').value = ''; document.getElementById('loginPwd').value = '';
   document.getElementById('loginErr').textContent = '';
 }
-
 const isAdmin = () => currentUser && currentUser.role === 'admin';
 
 // ── NAVIGATION ───────────────────────────────────────────
@@ -191,7 +147,7 @@ function switchView(v) {
     if (el) el.classList.toggle('active', id === v);
   });
   const titles = { liste:'Planning des tâches', planning:'Planning annuel', techniciens:'Vue par technicien', historique:'Historique des interventions', utilisateurs:'Gestion des utilisateurs' };
-  const subs   = { liste:'Triées par criticité', planning:'Calendrier mensuel', techniciens:'Charge de travail', historique:'Interventions effectuées', utilisateurs:'Comptes et rôles' };
+  const subs   = { liste:'Triées par criticité', planning:'Calendrier par semaines', techniciens:'Charge de travail', historique:'Interventions effectuées', utilisateurs:'Comptes et rôles' };
   document.getElementById('pageTitle').textContent = titles[v] || v;
   document.getElementById('pageSub').textContent   = subs[v]  || '';
   render();
@@ -238,7 +194,6 @@ function getStats() {
   return { total, done, late, soon, crit1, pct: total ? Math.round(done/total*100) : 0 };
 }
 
-// ── GET FILTERED (filtre machine basé sur t.loc) ─────────
 function getFiltered() {
   const fc  = document.getElementById('fltCrit')?.value || '';
   const ft  = document.getElementById('fltType')?.value || '';
@@ -249,22 +204,14 @@ function getFiltered() {
   let list  = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
   return list.filter(t => {
     const s = getStatus(t);
-    // Filtre machine (localisation)
     if (fm && t.loc !== fm) return false;
-    // Filtre criticité
     if (fc && t.crit != fc) return false;
-    // Filtre type
     if (ft && t.type !== ft) return false;
-    // Filtre technicien
     if (fth && t.techId != fth) return false;
-    // Filtre statut
     if (fs && s !== fs) return false;
-    // Recherche texte
     if (q) {
-      const searchFields = [
-        t.comp, t.prod, t.loc, t.note, t.freq, t.qty, t.type,
-        getTechName(t.techId), cLabel(t.crit), sLabel(getStatus(t)), fmtD(t.date)
-      ].map(x => (x||'').toLowerCase());
+      const searchFields = [t.comp, t.prod, t.loc, t.note, t.freq, t.qty, t.type,
+        getTechName(t.techId), cLabel(t.crit), sLabel(getStatus(t)), fmtD(t.date)].map(x => (x||'').toLowerCase());
       if (!searchFields.some(f => f.includes(q))) return false;
     }
     return true;
@@ -302,8 +249,6 @@ function buildListView() {
   </div>`:'';
 
   const techFilter=isAdmin()?`<select id="fltTech" onchange="render()"><option value="">Tous techniciens</option>${techs.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>`:'';
-
-  // Filtre machine basé sur la localisation (t.loc)
   const machineFilter=`<select id="fltMach" onchange="render()" style="max-width:200px"><option value="">Toutes machines</option>${machines.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>`;
 
   const ctrlHTML=`<div class="ctrl-bar">
@@ -336,11 +281,83 @@ function buildListView() {
   return statsHTML+ctrlHTML+`<div class="tbl-wrap"><table><thead><tr>${theadHTML}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-// ── CALENDAR VIEW ────────────────────────────────────────
-function buildCalView() {
-  const machines = getMachineList(); // basé sur t.loc
+// ── CALCUL NUMÉRO DE SEMAINE ISO ────────────────────────
+function getWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
 
-  // Sélecteur machine pour le planning (valeurs = t.loc)
+// Retourne la liste des semaines actives pour une tâche dans une année donnée
+function getActiveWeeks(t, yr) {
+  if (!t.date) return [];
+  const base = new Date(t.date);
+  if (isNaN(base)) return [];
+  const iv = FREQ_M[t.freq] || 12;
+  const weeks = new Set();
+  for (let off = 0; off < 300; off++) {
+    const d = new Date(base);
+    d.setMonth(d.getMonth() + Math.floor(off * iv));
+    // Pour hebdomadaire (iv=0.25 => ~7j), on décale par semaines
+    if (t.freq === 'Hebdomadaire') {
+      const dw = new Date(base);
+      dw.setDate(dw.getDate() + off * 7);
+      if (dw.getFullYear() > yr) break;
+      if (dw.getFullYear() === yr) weeks.add(getWeekNumber(dw));
+      if (dw.getFullYear() < yr) continue;
+    } else {
+      const dm = new Date(base);
+      dm.setMonth(dm.getMonth() + off * Math.round(iv));
+      if (dm.getFullYear() > yr) break;
+      if (dm.getFullYear() === yr) weeks.add(getWeekNumber(dm));
+    }
+    if (off > 200) break;
+  }
+  return [...weeks];
+}
+
+// Recalcul propre des semaines actives
+function getActiveWeeksClean(t, yr) {
+  if (!t.date) return new Set();
+  const base = new Date(t.date + 'T00:00:00');
+  if (isNaN(base)) return new Set();
+  const weeks = new Set();
+  const totalWeeks = 52;
+
+  if (t.freq === 'Hebdomadaire') {
+    // Toutes les semaines à partir de la date de base
+    let cur = new Date(base);
+    while (cur.getFullYear() <= yr) {
+      if (cur.getFullYear() === yr) weeks.add(getWeekNumber(cur));
+      cur.setDate(cur.getDate() + 7);
+      if (weeks.size > 52) break;
+    }
+  } else {
+    const ivMonths = Math.round(FREQ_M[t.freq] || 12);
+    let cur = new Date(base);
+    for (let i = 0; i < 50; i++) {
+      if (cur.getFullYear() > yr) break;
+      if (cur.getFullYear() === yr) weeks.add(getWeekNumber(cur));
+      cur.setMonth(cur.getMonth() + ivMonths);
+    }
+  }
+  return weeks;
+}
+
+// ── CALENDAR VIEW (PLANNING PAR SEMAINES) ───────────────
+function buildCalView() {
+  const machines = getMachineList();
+  const TOTAL_WEEKS = 52;
+  const weeks = Array.from({length: TOTAL_WEEKS}, (_, i) => i + 1);
+
+  // Onglets Graissage / Vidange
+  const tabsHTML = `
+    <div class="cal-tabs">
+      <button class="cal-tab ${calViewType==='graisse'?'cal-tab-active':''}" onclick="calViewType='graisse';render()">🟡 Planning Graissage</button>
+      <button class="cal-tab ${calViewType==='vidange'?'cal-tab-active':''}" onclick="calViewType='vidange';render()">🔴 Planning Vidange / Huile</button>
+    </div>`;
+
   const machSelect = `<select id="calMachFilter" onchange="calFilterMachine=this.value;render()" style="font-family:var(--font);font-size:13px;padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);outline:none;height:34px">
     <option value="">Toutes les machines</option>
     ${machines.map(m=>`<option value="${esc(m)}"${calFilterMachine===m?' selected':''}>${esc(m)}</option>`).join('')}
@@ -350,7 +367,10 @@ function buildCalView() {
     ? `<button class="btn btn-s btn-sm" onclick="downloadMachinePlanning('${esc(calFilterMachine).replace(/'/g,"\\'")}')">📥 Télécharger planning machine</button>`
     : `<button class="btn btn-s btn-sm" onclick="downloadAllPlannings()">📥 Télécharger tout (Excel)</button>`;
 
-  const header=`<div class="cal-header">
+  const isGraisse = calViewType === 'graisse';
+  const typeLabel = isGraisse ? 'G' : 'V';
+
+  const header = `<div class="cal-header">
     <div class="year-nav">
       <button onclick="calYear--;render()">◀ Précédent</button>
       <span class="year-label">${calYear}</span>
@@ -361,32 +381,150 @@ function buildCalView() {
       ${dlBtn}
     </div>
     <div class="cal-legend">
-      <span><span class="leg-dot" style="background:#185FA5"></span>Planifié</span>
-      <span><span class="leg-dot" style="background:var(--green)"></span>Effectué</span>
-      <span><span class="leg-dot" style="background:var(--red)"></span>En retard</span>
+      ${isGraisse
+        ? `<span><span class="leg-sq" style="background:#FFD700;border:1px solid #B8860B"></span>G — Graissage planifié</span>
+           <span><span class="leg-sq" style="background:#E53E3E;border:1px solid #9B1C1C"></span>G — Semaine courante / urgente</span>
+           <span><span class="leg-sq" style="background:#38A169;border:1px solid #276749"></span>G — Effectué</span>`
+        : `<span><span class="leg-sq" style="background:#E53E3E;border:1px solid #9B1C1C"></span>V — Vidange planifiée</span>
+           <span><span class="leg-sq" style="background:#3182CE;border:1px solid #2C5282"></span>V — Vidange effectuée</span>`
+      }
     </div>
   </div>`;
 
-  // ✅ CORRECTION : filtre par t.loc (localisation) et non t.comp
   let displayTasks = calFilterMachine
     ? tasks.filter(t => t.loc === calFilterMachine)
     : (isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id));
 
-  const now=new Date();
-  const ths=`<th>Composant</th>${MONTHS_S.map(m=>`<th>${m}</th>`).join('')}`;
-  const rows=displayTasks.map(t=>{
-    const si=tasks.indexOf(t);
-    const cells=Array.from({length:12},(_,mo)=>{
-      if(!isInMonth(t,mo,calYear))return`<td><div style="display:flex;align-items:center;justify-content:center"><div class="cal-dot d-empty"></div></div></td>`;
-      const isLate=!t.done&&new Date(calYear,mo+1,0)<now;
-      const cls=t.done?'d-done':isLate?'d-late':'d-sched';
-      return`<td><div style="display:flex;align-items:center;justify-content:center"><div class="cal-dot ${cls}" onclick="calClick(${si})" title="${esc(t.prod)}">${t.done?'✓':isLate?'!':''}</div></div></td>`;
-    }).join('');
-    return`<tr><td><div style="font-size:12px;font-weight:500"><span class="badge ${cClass(t.crit)}" style="font-size:10px;padding:1px 5px;margin-right:4px">${t.crit}</span>${esc(t.comp.substring(0,22))}${t.comp.length>22?'…':''}</div><div style="font-size:10px;color:var(--text3)">${esc(getTechName(t.techId))}</div></td>${cells}</tr>`;
+  // Filtrer par type
+  displayTasks = displayTasks.filter(t => isGraisse ? t.type === 'Graisse' : t.type === 'Huile');
+
+  if (!displayTasks.length) {
+    return header + tabsHTML + `<div class="empty"><div class="empty-icon">📅</div><p>Aucune tâche ${isGraisse?'de graissage':'de vidange'} trouvée</p></div>`;
+  }
+
+  const now = new Date();
+  const currentWeek = getWeekNumber(now);
+
+  // Grouper par machine (comp)
+  const byMachine = {};
+  displayTasks.forEach(t => {
+    if (!byMachine[t.comp]) byMachine[t.comp] = [];
+    byMachine[t.comp].push(t);
+  });
+
+  // Construire le header semaines : groupés par mois
+  // Calculer à quelle semaine ISO correspond chaque mois de l'année
+  const monthWeekRanges = [];
+  for (let mo = 0; mo < 12; mo++) {
+    const firstDay = new Date(calYear, mo, 1);
+    const lastDay  = new Date(calYear, mo + 1, 0);
+    const wStart = getWeekNumber(firstDay);
+    const wEnd   = getWeekNumber(lastDay);
+    monthWeekRanges.push({ mo, wStart, wEnd, label: MONTHS_S[mo] });
+  }
+
+  // Ligne mois (groupe de colonnes)
+  const monthHeaderCells = monthWeekRanges.map(m => {
+    const span = Math.max(1, m.wEnd - m.wStart + 1);
+    return `<th colspan="${span}" style="background:#1a365d;color:#fff;text-align:center;font-size:11px;font-weight:700;border:1px solid #2d4a7a;padding:4px 2px;letter-spacing:0.5px">${m.label}</th>`;
   }).join('');
-  return header+`<div class="cal-scroll"><table class="cal-table"><thead><tr>${ths}</tr></thead><tbody>${rows||'<tr><td colspan="13"><div class="empty"><div class="empty-icon">📅</div><p>Aucune tâche pour cette machine</p></div></td></tr>'}</tbody></table></div>`;
+
+  // Ligne numéros de semaine
+  const weekHeaderCells = weeks.map(w => {
+    const isCur = w === currentWeek && calYear === now.getFullYear();
+    return `<th style="background:${isCur?'#E53E3E':'#2d4a7a'};color:#fff;text-align:center;font-size:10px;font-weight:600;border:1px solid #1a365d;min-width:22px;width:22px;padding:3px 1px">S${w}</th>`;
+  }).join('');
+
+  // Lignes de données
+  let rowsHTML = '';
+  const machineNames = Object.keys(byMachine).sort();
+
+  machineNames.forEach((machineName, mIdx) => {
+    const machineTasks = byMachine[machineName];
+    const rowSpan = machineTasks.length;
+    const rowBg = mIdx % 2 === 0 ? '#f8fafc' : '#fff';
+
+    machineTasks.forEach((t, tIdx) => {
+      const si = tasks.indexOf(t);
+      const activeWeeks = getActiveWeeksClean(t, calYear);
+      const canCheck = isAdmin() || t.techId === currentUser.id;
+
+      const weekCells = weeks.map(w => {
+        if (!activeWeeks.has(w)) return `<td style="border:1px solid #e2e8f0;background:${rowBg}"></td>`;
+
+        const isCur  = w === currentWeek && calYear === now.getFullYear();
+        const isPast = w < currentWeek && calYear === now.getFullYear();
+
+        let bg, border, color, content;
+        if (t.done) {
+          bg = isGraisse ? '#38A169' : '#3182CE';
+          border = isGraisse ? '#276749' : '#2C5282';
+          color = '#fff';
+          content = typeLabel;
+        } else if (isCur || (isPast && t.crit === 1)) {
+          bg = '#E53E3E'; border = '#9B1C1C'; color = '#fff'; content = typeLabel;
+        } else if (isPast) {
+          bg = isGraisse ? '#F6AD55' : '#FC8181'; border = isGraisse ? '#C05621' : '#9B1C1C'; color = '#7B341E'; content = typeLabel;
+        } else {
+          bg = isGraisse ? '#FFD700' : '#E53E3E';
+          border = isGraisse ? '#B8860B' : '#9B1C1C';
+          color = isGraisse ? '#7B341E' : '#fff';
+          content = typeLabel;
+        }
+
+        return `<td style="border:1px solid #e2e8f0;background:${rowBg};padding:1px">
+          <div onclick="calClickWeek(${si},${w})" title="${esc(t.comp)} — ${t.freq} — S${w}" style="background:${bg};border:1px solid ${border};color:${color};width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;margin:auto;cursor:pointer;border-radius:2px;user-select:none">${content}</div>
+        </td>`;
+      }).join('');
+
+      if (tIdx === 0) {
+        rowsHTML += `<tr style="background:${rowBg}">
+          <td rowspan="${rowSpan}" style="border:1px solid #cbd5e0;border-right:2px solid #2d4a7a;padding:6px 10px;vertical-align:middle;background:#edf2f7">
+            <div style="font-size:12px;font-weight:800;color:#1a365d;text-transform:uppercase;letter-spacing:0.5px">${esc(machineName)}</div>
+          </td>
+          <td style="border:1px solid #cbd5e0;padding:4px 8px;font-size:11px;color:#4a5568;white-space:nowrap;min-width:120px">${esc(t.prod||t.note.substring(0,30)+(t.note.length>30?'…':''))}</td>
+          <td style="border:1px solid #cbd5e0;padding:4px 8px;font-size:11px;color:#4a5568;white-space:nowrap">${t.freq}</td>
+          ${weekCells}
+        </tr>`;
+      } else {
+        rowsHTML += `<tr style="background:${rowBg}">
+          <td style="border:1px solid #cbd5e0;padding:4px 8px;font-size:11px;color:#4a5568;white-space:nowrap;min-width:120px">${esc(t.prod||t.note.substring(0,30)+(t.note.length>30?'…':''))}</td>
+          <td style="border:1px solid #cbd5e0;padding:4px 8px;font-size:11px;color:#4a5568;white-space:nowrap">${t.freq}</td>
+          ${weekCells}
+        </tr>`;
+      }
+    });
+  });
+
+  const tableHTML = `
+    <div class="cal-scroll" style="margin-top:0">
+      <table style="border-collapse:collapse;width:100%;font-family:var(--font)">
+        <thead>
+          <tr>
+            <th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:160px">ÉQUIPEMENT</th>
+            <th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:130px">LUBRIFIANT</th>
+            <th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:100px">FRÉQUENCE</th>
+            ${monthHeaderCells}
+          </tr>
+          <tr>${weekHeaderCells}</tr>
+        </thead>
+        <tbody>${rowsHTML}</tbody>
+      </table>
+    </div>`;
+
+  return header + tabsHTML + tableHTML;
 }
 
+function calClickWeek(si, week) {
+  const t = tasks[si], canCheck = isAdmin() || t.techId === currentUser.id;
+  if (!canCheck) { toast('Vous ne pouvez cocher que vos propres tâches','err'); return; }
+  showCf('Confirmer intervention',
+    `Marquer <strong>${esc(t.comp)}</strong> (S${week}) comme effectué ?`,
+    () => { tasks[si].done=true; tasks[si].hist.push(today()); saveTasks(); toast('Tâche marquée effectuée'); render(); }
+  );
+}
+
+// Compatibilité ancien code
 function isInMonth(t,mo,yr) {
   if(!t.date)return false; const base=new Date(t.date); if(isNaN(base))return false;
   const iv=FREQ_M[t.freq]||12;
@@ -401,97 +539,205 @@ function calClick(si) {
   });
 }
 
-// ── TÉLÉCHARGEMENT PLANNING PAR MACHINE ─────────────────
-// ✅ CORRECTION : filtre par t.loc (localisation) au lieu de t.comp
+// ── TÉLÉCHARGEMENT EXCEL COLORÉ PAR SEMAINES ────────────
 function downloadMachinePlanning(machineName) {
   const machineTasks = tasks.filter(t => t.loc === machineName);
   if (!machineTasks.length) { toast('Aucune tâche pour cette machine', 'err'); return; }
-
   if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
 
   const wb = XLSX.utils.book_new();
+  const TOTAL_WEEKS = 52;
+  const weeks = Array.from({length: TOTAL_WEEKS}, (_, i) => i + 1);
+  const now = new Date();
+  const currentWeek = getWeekNumber(now);
 
-  // Feuille 1 : Infos machine
-  const infoRows = [
-    ['PLANNING DE GRAISSAGE & VIDANGE', ''],
+  // ── Feuille 1 : Infos ──
+  const wsInfo = XLSX.utils.aoa_to_sheet([
+    ['PLANNING DE GRAISSAGE & VIDANGE',''],
     ['Machine :', machineName],
     ['Exporté le :', fmtD(today())],
     ['Année :', calYear],
-    [''],
     ['Technicien(s) :', [...new Set(machineTasks.map(t=>getTechName(t.techId)))].join(', ')],
-  ];
-  const wsInfo = XLSX.utils.aoa_to_sheet(infoRows);
+  ]);
   XLSX.utils.book_append_sheet(wb, wsInfo, 'Infos');
 
-  // Feuille 2 : Tâches détaillées
-  const header = ['Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Prochaine échéance','Localisation','Durée','Remarques','Statut'];
-  const rows = machineTasks.map(t => [
-    t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'', t.freq,
-    getTechName(t.techId), fmtD(t.date), t.loc||'', t.dur||'', t.note||'',
-    sLabel(getStatus(t))
-  ]);
-  const wsTasks = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  wsTasks['!cols'] = [20,12,10,25,10,14,18,14,18,10,30,12].map(w=>({wch:w}));
-  XLSX.utils.book_append_sheet(wb, wsTasks, 'Tâches');
+  // ── Feuille 2 : Planning Graissage ──
+  buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Graisse'), weeks, calYear, currentWeek, `Graissage ${calYear}`, 'G',
+    { planned:'FFFF00', done:'92D050', late:'FF0000', header:'1A365D', headerFont:'FFFFFF' }
+  );
 
-  // Feuille 3 : Calendrier mensuel pour l'année
-  const calHeader = ['Composant', ...MONTHS_F];
-  const calRows = machineTasks.map(t => {
-    const row = [t.comp];
-    for (let mo = 0; mo < 12; mo++) {
-      row.push(isInMonth(t, mo, calYear) ? (t.done ? '✓ Effectué' : 'À faire') : '');
-    }
-    return row;
-  });
-  const wsCal = XLSX.utils.aoa_to_sheet([calHeader, ...calRows]);
-  wsCal['!cols'] = [{wch:25}, ...Array(12).fill({wch:12})];
-  XLSX.utils.book_append_sheet(wb, wsCal, `Planning ${calYear}`);
+  // ── Feuille 3 : Planning Vidange ──
+  buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Huile'), weeks, calYear, currentWeek, `Vidange ${calYear}`, 'V',
+    { planned:'FF0000', done:'00B0F0', late:'FF6600', header:'1A365D', headerFont:'FFFFFF' }
+  );
 
-  // Feuille 4 : Historique
-  const histHeader = ['Composant','Date intervention','Produit','Technicien','Remarques'];
+  // ── Feuille 4 : Historique ──
+  const histHeader = ['Date','Équipement','Type','Produit','Technicien','Statut'];
   const histRows = [];
   machineTasks.forEach(t => {
-    (t.hist||[]).forEach(d => histRows.push([t.comp, fmtD(d), t.prod, getTechName(t.techId), t.note||'']));
+    (t.hist||[]).forEach(d => histRows.push([fmtD(d), t.comp, t.type, t.prod||'—', getTechName(t.techId), 'Effectué']));
   });
-  if (histRows.length) {
-    const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
-    wsHist['!cols'] = [{wch:25},{wch:14},{wch:25},{wch:18},{wch:30}];
-    XLSX.utils.book_append_sheet(wb, wsHist, 'Historique');
-  }
+  if (!histRows.length) histRows.push(['Aucune intervention enregistrée','','','','','']);
+  const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
+  wsHist['!cols'] = [{wch:14},{wch:25},{wch:10},{wch:28},{wch:18},{wch:12}];
+  // Style header historique
+  styleHeaderRow(wsHist, histHeader.length, '1A365D', 'FFFFFF');
+  XLSX.utils.book_append_sheet(wb, wsHist, 'Historique');
 
   const safeName = machineName.replace(/[/\\:*?"<>|]/g,'_');
   XLSX.writeFile(wb, `LubriPlan_${safeName}_${calYear}.xlsx`);
   toast(`📊 Planning "${machineName}" téléchargé`);
 }
 
-// ✅ CORRECTION : filtre par t.loc (localisation) au lieu de t.comp
+function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, letter, colors) {
+  const aoa = [];
+  const cellStyles = {}; // ref => style
+
+  // Ligne 1 : Mois (groupés)
+  const monthRow = ['ÉQUIPEMENT', 'LUBRIFIANT', 'FRÉQUENCE'];
+  const now = new Date();
+  const monthWeekMap = {};
+  for (let mo = 0; mo < 12; mo++) {
+    const firstDay = new Date(yr, mo, 1);
+    const lastDay  = new Date(yr, mo + 1, 0);
+    let wS = getWeekNumber(firstDay), wE = getWeekNumber(lastDay);
+    if (wS > wE) wE = wS; // Sécurité
+    for (let w = wS; w <= wE && w <= 52; w++) {
+      if (!monthWeekMap[w]) monthWeekMap[w] = mo;
+    }
+  }
+  // Colonnes mois (3 premières fixes + semaines)
+  weeks.forEach(w => {
+    const mo = monthWeekMap[w] !== undefined ? monthWeekMap[w] : -1;
+    monthRow.push(mo >= 0 ? MONTHS_S[mo] : '');
+  });
+  aoa.push(monthRow);
+
+  // Ligne 2 : S1...S52
+  const weekRow = ['ÉQUIPEMENT', 'LUBRIFIANT', 'FRÉQUENCE', ...weeks.map(w => `S${w}`)];
+  aoa.push(weekRow);
+
+  // Lignes de données
+  const byMachine = {};
+  taskList.forEach(t => { if (!byMachine[t.comp]) byMachine[t.comp] = []; byMachine[t.comp].push(t); });
+
+  Object.keys(byMachine).sort().forEach(machineName => {
+    byMachine[machineName].forEach(t => {
+      const activeWeeks = getActiveWeeksClean(t, yr);
+      const row = [machineName, t.prod || t.note.substring(0,40), t.freq];
+      weeks.forEach(w => {
+        if (!activeWeeks.has(w)) { row.push(''); return; }
+        row.push(letter);
+      });
+      aoa.push(row);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  // Appliquer les couleurs cellule par cellule
+  const dataStartRow = 2; // 0-indexed, ligne données = index 2+
+  aoa.forEach((rowData, ri) => {
+    rowData.forEach((cell, ci) => {
+      const ref = XLSX.utils.encode_cell({r: ri, c: ci});
+      if (!ws[ref]) return;
+
+      let fgColor = null, fontColor = 'FF000000', bold = false;
+
+      if (ri === 0) {
+        // Ligne mois
+        fgColor = colors.header; fontColor = colors.headerFont; bold = true;
+      } else if (ri === 1) {
+        // Ligne semaines
+        const w = ci - 2; // offset 3 colonnes fixes
+        if (ci < 3) { fgColor = colors.header; fontColor = colors.headerFont; bold = true; }
+        else {
+          const weekNum = ci - 2;
+          fgColor = weekNum === currentWeek && yr === now.getFullYear() ? 'E53E3E' : '2D4A7A';
+          fontColor = 'FFFFFFFF'; bold = true;
+        }
+      } else if (ri >= 2) {
+        if (ci === 0) { fgColor = 'EDF2F7'; bold = true; }
+        else if (ci === 1 || ci === 2) { fgColor = 'F7FAFC'; }
+        else if (cell === letter) {
+          const weekNum = ci - 2;
+          const rowTask = null; // On ne peut pas facilement relier ici, on utilise la couleur planifiée
+          const isPast = weekNum < currentWeek && yr === now.getFullYear();
+          const isCur  = weekNum === currentWeek && yr === now.getFullYear();
+          fgColor = isCur ? 'E53E3E' : isPast ? colors.late : colors.planned;
+          fontColor = (colors.planned === 'FFFF00' && !isCur && !isPast) ? 'FF7B341E' : 'FFFFFFFF';
+          bold = true;
+        }
+      }
+
+      if (fgColor) {
+        ws[ref].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: fgColor } },
+          font: { bold, color: { rgb: fontColor }, sz: 9, name: 'Calibri' },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: {
+            top:    { style: 'thin', color: { rgb: 'CBD5E0' } },
+            bottom: { style: 'thin', color: { rgb: 'CBD5E0' } },
+            left:   { style: 'thin', color: { rgb: 'CBD5E0' } },
+            right:  { style: 'thin', color: { rgb: 'CBD5E0' } }
+          }
+        };
+      }
+    });
+  });
+
+  // Largeurs colonnes
+  ws['!cols'] = [
+    {wch:22}, {wch:28}, {wch:14},
+    ...Array(52).fill({wch:4})
+  ];
+
+  // Hauteurs lignes
+  ws['!rows'] = [{hpt:18},{hpt:16},...Array(aoa.length-2).fill({hpt:15})];
+
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+}
+
+function styleHeaderRow(ws, colCount, bgHex, fontHex) {
+  for (let ci = 0; ci < colCount; ci++) {
+    const ref = XLSX.utils.encode_cell({r:0, c:ci});
+    if (!ws[ref]) continue;
+    ws[ref].s = {
+      fill: { patternType:'solid', fgColor:{rgb:bgHex} },
+      font: { bold:true, color:{rgb:fontHex}, sz:10 },
+      alignment: { horizontal:'center', vertical:'center' },
+      border: { top:{style:'thin',color:{rgb:'CBD5E0'}}, bottom:{style:'thin',color:{rgb:'CBD5E0'}}, left:{style:'thin',color:{rgb:'CBD5E0'}}, right:{style:'thin',color:{rgb:'CBD5E0'}} }
+    };
+  }
+}
+
 function downloadAllPlannings() {
   if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
   const wb = XLSX.utils.book_new();
+  const weeks = Array.from({length:52},(_,i)=>i+1);
+  const now = new Date();
+  const currentWeek = getWeekNumber(now);
 
-  // Une feuille par localisation/machine
   getMachineList().forEach(machineName => {
     const machineTasks = tasks.filter(t => t.loc === machineName);
-    const calHeader = ['Composant', 'Type', 'Produit', 'Fréquence', 'Technicien', ...MONTHS_F, 'Statut'];
-    const calRows = machineTasks.map(t => {
-      const row = [t.comp, t.type, t.prod, t.freq, getTechName(t.techId)];
-      for (let mo = 0; mo < 12; mo++) {
-        row.push(isInMonth(t, mo, calYear) ? (t.done ? '✓' : '●') : '');
-      }
-      row.push(sLabel(getStatus(t)));
-      return row;
-    });
-    const ws = XLSX.utils.aoa_to_sheet([calHeader, ...calRows]);
-    ws['!cols'] = [{wch:22},{wch:10},{wch:22},{wch:14},{wch:18},...Array(12).fill({wch:6}),{wch:12}];
-    const sheetName = machineName.substring(0,31).replace(/[/\\:*?"<>[\]]/g,'_');
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    const sheetBase = machineName.substring(0,20).replace(/[/\\:*?"<>[\]]/g,'_');
+
+    buildWeeklySheet(wb, machineTasks.filter(t=>t.type==='Graisse'), weeks, calYear, currentWeek,
+      `${sheetBase}_G`, 'G',
+      { planned:'FFFF00', done:'92D050', late:'FF0000', header:'1A365D', headerFont:'FFFFFF' }
+    );
+    buildWeeklySheet(wb, machineTasks.filter(t=>t.type==='Huile'), weeks, calYear, currentWeek,
+      `${sheetBase}_V`, 'V',
+      { planned:'FF0000', done:'00B0F0', late:'FF6600', header:'1A365D', headerFont:'FFFFFF' }
+    );
   });
 
   // Récapitulatif
-  const recapHeader = ['Machine','Criticité','Type','Produit','Fréquence','Technicien','Prochaine échéance','Statut'];
-  const recapRows = tasks.map(t => [t.comp, cLabel(t.crit), t.type, t.prod, t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))]);
+  const recapHeader = ['Machine','Localisation','Criticité','Type','Produit','Fréquence','Technicien','Prochaine échéance','Statut'];
+  const recapRows = tasks.map(t => [t.comp, t.loc||'', cLabel(t.crit), t.type, t.prod, t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))]);
   const wsRecap = XLSX.utils.aoa_to_sheet([recapHeader, ...recapRows]);
-  wsRecap['!cols'] = [{wch:25},{wch:12},{wch:10},{wch:25},{wch:14},{wch:18},{wch:14},{wch:12}];
+  wsRecap['!cols'] = [{wch:22},{wch:18},{wch:12},{wch:10},{wch:25},{wch:14},{wch:18},{wch:14},{wch:12}];
+  styleHeaderRow(wsRecap, recapHeader.length, '1A365D', 'FFFFFF');
   XLSX.utils.book_append_sheet(wb, wsRecap, 'Récapitulatif');
 
   XLSX.writeFile(wb, `LubriPlan_Planning_Complet_${calYear}.xlsx`);
@@ -514,13 +760,93 @@ function buildTechView() {
   return`<div class="tech-grid">${cards}</div>`;
 }
 
-// ── HISTORY VIEW ─────────────────────────────────────────
+// ── HISTORY VIEW (RESTRUCTURÉ EN TABLEAU) ───────────────
 function buildHistView() {
-  const list=isAdmin()?tasks:tasks.filter(t=>t.techId===currentUser.id);
-  const all=[]; list.forEach(t=>(t.hist||[]).forEach(d=>all.push({d,t}))); all.sort((a,b)=>new Date(b.d)-new Date(a.d));
-  if(!all.length)return`<div class="empty"><div class="empty-icon">🕐</div><p>Aucune intervention enregistrée</p></div>`;
-  const items=all.map(({d,t})=>`<div class="hist-item"><div class="hist-date">${fmtD(d)}</div><div style="display:flex;flex-direction:column;align-items:center"><div class="hist-dot"></div></div><div class="hist-cont"><div class="hist-comp">${esc(t.comp)}</div><div class="hist-det"><span class="badge ${tClass(t.type)}" style="font-size:10px">${t.type}</span> ${esc(t.prod)} — ${esc(getTechName(t.techId))} ${t.qty?`— <strong>${esc(t.qty)}</strong>`:''}</div>${t.note?`<div style="font-size:11px;color:var(--text3);margin-top:3px;font-style:italic">${esc(t.note)}</div>`:''}</div></div>`).join('');
-  return`<div class="hist-wrap">${items}</div>`;
+  const list = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
+  const all = [];
+  list.forEach(t => (t.hist||[]).forEach(d => all.push({d, t})));
+  all.sort((a,b) => new Date(b.d) - new Date(a.d));
+
+  if (!all.length) return `<div class="empty"><div class="empty-icon">🕐</div><p>Aucune intervention enregistrée</p></div>`;
+
+  // Stats rapides
+  const totalInterv = all.length;
+  const thisMonth = all.filter(({d}) => { const dt = new Date(d); return dt.getMonth() === new Date().getMonth() && dt.getFullYear() === new Date().getFullYear(); }).length;
+  const byType = { Huile: all.filter(({t}) => t.type==='Huile').length, Graisse: all.filter(({t}) => t.type==='Graisse').length };
+
+  const statsBar = `
+    <div class="hist-stats-bar">
+      <div class="hist-stat-item">
+        <div class="hist-stat-val">${totalInterv}</div>
+        <div class="hist-stat-lbl">Total interventions</div>
+      </div>
+      <div class="hist-stat-sep"></div>
+      <div class="hist-stat-item">
+        <div class="hist-stat-val" style="color:var(--green)">${thisMonth}</div>
+        <div class="hist-stat-lbl">Ce mois-ci</div>
+      </div>
+      <div class="hist-stat-sep"></div>
+      <div class="hist-stat-item">
+        <div class="hist-stat-val" style="color:#3182CE">${byType.Huile}</div>
+        <div class="hist-stat-lbl">Vidanges huile</div>
+      </div>
+      <div class="hist-stat-sep"></div>
+      <div class="hist-stat-item">
+        <div class="hist-stat-val" style="color:#D69E2E">${byType.Graisse}</div>
+        <div class="hist-stat-lbl">Graissages</div>
+      </div>
+    </div>`;
+
+  // Tableau structuré
+  const tableRows = all.map(({d, t}, idx) => {
+    const rowBg = idx % 2 === 0 ? '#f8fafc' : '#fff';
+    const typeColor = t.type === 'Huile' ? '#3182CE' : '#D69E2E';
+    const typeBg    = t.type === 'Huile' ? '#EBF8FF' : '#FFFFF0';
+    const critColor = ({1:'#E53E3E',2:'#DD6B20',3:'#D69E2E',4:'#38A169'})[t.crit] || '#718096';
+    return `<tr style="background:${rowBg};border-bottom:1px solid #e2e8f0">
+      <td style="padding:10px 14px;font-size:12px;font-family:var(--mono);font-weight:600;color:#2d3748;white-space:nowrap;border-right:1px solid #e2e8f0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:8px;height:8px;border-radius:50%;background:#38A169;flex-shrink:0"></div>
+          ${fmtD(d)}
+        </div>
+      </td>
+      <td style="padding:10px 14px;border-right:1px solid #e2e8f0">
+        <div style="font-size:13px;font-weight:700;color:#1a365d">${esc(t.comp)}</div>
+        <div style="font-size:11px;color:#718096;margin-top:2px">📍 ${esc(t.loc||'—')}</div>
+      </td>
+      <td style="padding:10px 14px;border-right:1px solid #e2e8f0">
+        <span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;background:${typeBg};color:${typeColor};border:1px solid ${typeColor}30">${t.type}</span>
+      </td>
+      <td style="padding:10px 14px;font-size:12px;color:#4a5568;border-right:1px solid #e2e8f0">${esc(t.prod||'—')}</td>
+      <td style="padding:10px 14px;font-size:12px;color:#4a5568;border-right:1px solid #e2e8f0">${esc(t.freq)}</td>
+      <td style="padding:10px 14px;font-size:12px;color:#4a5568;border-right:1px solid #e2e8f0">${esc(getTechName(t.techId))}</td>
+      <td style="padding:10px 14px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${critColor}"></div>
+          <span style="font-size:11px;color:${critColor};font-weight:600">${cLabel(t.crit)}</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    ${statsBar}
+    <div class="tbl-wrap" style="margin-top:16px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#1a365d">
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid #2d4a7a">DATE</th>
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid #2d4a7a">ÉQUIPEMENT</th>
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid #2d4a7a">TYPE</th>
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid #2d4a7a">PRODUIT</th>
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid #2d4a7a">FRÉQUENCE</th>
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px;border-right:1px solid #2d4a7a">TECHNICIEN</th>
+            <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:0.5px">CRITICITÉ</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>`;
 }
 
 // ── USER VIEW ────────────────────────────────────────────
@@ -624,56 +950,16 @@ function exportCSV(){
   a.download=`lubriplan_${today()}.csv`;a.click();toast('Export CSV téléchargé');
 }
 
-// ── EXPORT EXCEL (XLSX) ──────────────────────────────────
+// ── EXPORT EXCEL GLOBAL ──────────────────────────────────
 function exportXLSX() {
   if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
   const wb = XLSX.utils.book_new();
-
-  // Feuille 1 : Toutes les tâches
   const header = ['ID','Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Localisation','Durée','Remarques','Effectué','Historique'];
-  const rows = tasks.map(t => [
-    t.id, t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'',
-    t.freq, getTechName(t.techId), fmtD(t.date),
-    t.loc||'', t.dur||'', t.note||'',
-    t.done ? 'Oui' : 'Non',
-    (t.hist||[]).map(fmtD).join(' | ')
-  ]);
+  const rows = tasks.map(t => [t.id, t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'', t.freq, getTechName(t.techId), fmtD(t.date), t.loc||'', t.dur||'', t.note||'', t.done?'Oui':'Non', (t.hist||[]).map(fmtD).join(' | ')]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   ws['!cols'] = [5,25,12,10,25,10,14,18,12,20,10,30,10,20].map(w=>({wch:w}));
+  styleHeaderRow(ws, header.length, '1A365D', 'FFFFFF');
   XLSX.utils.book_append_sheet(wb, ws, 'Tâches');
-
-  // Feuille 2 : Planning annuel
-  const planHeader = ['Machine','Type','Produit','Fréquence','Technicien',...MONTHS_F];
-  const planRows = tasks.map(t => {
-    const row = [t.comp, t.type, t.prod, t.freq, getTechName(t.techId)];
-    for (let mo = 0; mo < 12; mo++) {
-      row.push(isInMonth(t, mo, new Date().getFullYear()) ? (t.done ? '✓' : '●') : '');
-    }
-    return row;
-  });
-  const wsPlan = XLSX.utils.aoa_to_sheet([planHeader, ...planRows]);
-  wsPlan['!cols'] = [{wch:25},{wch:10},{wch:22},{wch:14},{wch:18},...Array(12).fill({wch:10})];
-  XLSX.utils.book_append_sheet(wb, wsPlan, `Planning ${new Date().getFullYear()}`);
-
-  // Feuille 3 : Statistiques
-  const statRows = [
-    ['Statistiques LubriPlan', ''],
-    ['Total tâches', tasks.length],
-    ['Tâches effectuées', tasks.filter(t=>t.done).length],
-    ['Tâches en retard', tasks.filter(t=>getStatus(t)==='late').length],
-    ['Échéance proche (14j)', tasks.filter(t=>getStatus(t)==='soon').length],
-    ['Criticité 1 (critique)', tasks.filter(t=>t.crit===1).length],
-    [''],
-    ['Par technicien','Nb tâches','Effectuées'],
-    ...users.filter(u=>u.role==='tech').map(u => {
-      const tl = tasks.filter(t=>t.techId===u.id);
-      return [u.name, tl.length, tl.filter(t=>t.done).length];
-    })
-  ];
-  const wsStat = XLSX.utils.aoa_to_sheet(statRows);
-  wsStat['!cols'] = [{wch:28},{wch:14},{wch:14}];
-  XLSX.utils.book_append_sheet(wb, wsStat, 'Statistiques');
-
   XLSX.writeFile(wb, `LubriPlan_Export_${today()}.xlsx`);
   toast('📊 Export Excel téléchargé');
 }
@@ -682,11 +968,9 @@ function exportXLSX() {
 function importFile(e) {
   const file=e.target.files[0]; if(!file)return;
   const ext=file.name.split('.').pop().toLowerCase();
-  if(ext==='xlsx'||ext==='xls') importXLSX_file(file);
-  else importCSVfile(file);
+  if(ext==='xlsx'||ext==='xls') importXLSX_file(file); else importCSVfile(file);
   e.target.value='';
 }
-
 function importXLSX_file(file) {
   const reader=new FileReader();
   reader.onload=function(ev){
@@ -700,31 +984,16 @@ function importXLSX_file(file) {
       let count=0;
       rows.slice(1).forEach(row=>{
         if(row.every(c=>c===''||c===null||c===undefined))return;
-        const get=(keys)=>{
-          for(const k of keys){const idx=header.findIndex(h=>h.includes(k));if(idx>=0&&row[idx]!==undefined&&row[idx]!=='')return String(row[idx]).trim();}
-          return'';
-        };
-        const parseDate=(val)=>{
-          if(!val)return today();
-          if(typeof val==='number'){const d=new Date(Math.round((val-25569)*86400*1000));return d.toISOString().split('T')[0];}
-          const s=String(val).trim();
-          if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){const[dd,mm,yyyy]=s.split('/');return`${yyyy}-${mm}-${dd}`;}
-          if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
-          return today();
-        };
+        const get=(keys)=>{for(const k of keys){const idx=header.findIndex(h=>h.includes(k));if(idx>=0&&row[idx]!==undefined&&row[idx]!=='')return String(row[idx]).trim();}return'';};
+        const parseDate=(val)=>{if(!val)return today();if(typeof val==='number'){const d=new Date(Math.round((val-25569)*86400*1000));return d.toISOString().split('T')[0];}const s=String(val).trim();if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){const[dd,mm,yyyy]=s.split('/');return`${yyyy}-${mm}-${dd}`;}if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;return today();};
         const comp=get(['composant','équipement','equipement','component','nom','machine']);
         if(!comp)return;
-        const critRaw=get(['criticité','criticite','crit','priorité','priorite']);
-        const crit=Math.min(4,Math.max(1,parseInt(critRaw)||3));
-        const typeRaw=get(['type']);
-        const type=typeRaw.toLowerCase().includes('graisse')?'Graisse':'Huile';
-        const freqRaw=get(['fréquence','frequence','freq','periodicité','periodicite']);
-        const freqMap={'hebdo':'Hebdomadaire','mensuel':'Mensuelle','bimest':'Bimestrielle','trimest':'Trimestrielle','semest':'Semestrielle','annuel':'Annuelle'};
-        let freq='Trimestrielle';
-        for(const[k,v]of Object.entries(freqMap)){if(freqRaw.toLowerCase().includes(k)){freq=v;break;}}
+        const crit=Math.min(4,Math.max(1,parseInt(get(['criticité','criticite','crit','priorité','priorite']))||3));
+        const typeRaw=get(['type']); const type=typeRaw.toLowerCase().includes('graisse')?'Graisse':'Huile';
+        const freqRaw=get(['fréquence','frequence','freq']); const freqMap={'hebdo':'Hebdomadaire','mensuel':'Mensuelle','bimest':'Bimestrielle','trimest':'Trimestrielle','semest':'Semestrielle','annuel':'Annuelle'};
+        let freq='Trimestrielle'; for(const[k,v]of Object.entries(freqMap)){if(freqRaw.toLowerCase().includes(k)){freq=v;break;}}
         const date=parseDate(get(['échéance','echeance','date','prochaine']));
-        const doneRaw=get(['effectué','effectue','fait','done','statut']);
-        const done=['oui','yes','1','true','effectué','effectue'].includes(doneRaw.toLowerCase());
+        const doneRaw=get(['effectué','effectue','fait','done','statut']); const done=['oui','yes','1','true','effectué','effectue'].includes(doneRaw.toLowerCase());
         tasks.push({id:nextTaskId(),comp,crit,type,prod:get(['produit','référence','reference','réf','ref','lubrifiant','huile']),qty:get(['quantité','quantite','qté','qte','qty']),freq,date,techId:null,dur:get(['durée','duree','dur','temps']),loc:get(['localisation','local','emplacement','zone','lieu']),note:get(['remarque','note','commentaire','observation']),done,hist:done?[date]:[]});
         count++;
       });
@@ -733,12 +1002,10 @@ function importXLSX_file(file) {
   };
   reader.readAsArrayBuffer(file);
 }
-
 function importCSVfile(file) {
   const reader=new FileReader();
   reader.onload=ev=>{
-    const lines=ev.target.result.split('\n').slice(1).filter(l=>l.trim());
-    let count=0;
+    const lines=ev.target.result.split('\n').slice(1).filter(l=>l.trim()); let count=0;
     lines.forEach(line=>{
       const cols=line.split(',').map(x=>x.replace(/^"|"$/g,'').replace(/""/g,'"'));
       if(cols.length<9)return;
