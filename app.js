@@ -174,6 +174,13 @@ function switchView(v) {
 // ── RENDER ───────────────────────────────────────────────
 function render() {
   const c = document.getElementById('content');
+
+  // FIX RECHERCHE: Sauvegarder la position du curseur dans le champ de recherche
+  // avant de reconstruire le DOM, pour la restaurer après.
+  const srchEl = document.getElementById('srch');
+  const srchCursorPos = srchEl ? srchEl.selectionStart : null;
+  const srchWasFocused = srchEl && document.activeElement === srchEl;
+
   if      (currentView === 'liste')        c.innerHTML = buildListView();
   else if (currentView === 'planning')     c.innerHTML = buildCalView();
   else if (currentView === 'techniciens')  c.innerHTML = buildTechView();
@@ -181,7 +188,20 @@ function render() {
   else if (currentView === 'utilisateurs') c.innerHTML = buildUserView();
 
   // Après reconstruction du DOM, restaurer les valeurs des filtres
-  if (currentView === 'liste') restoreFilterState();
+  if (currentView === 'liste') {
+    restoreFilterState();
+    // FIX RECHERCHE: Remettre le focus et la position du curseur dans le champ de recherche
+    // pour que l'utilisateur puisse continuer à taper sans interruption
+    if (srchWasFocused || filterState.srch) {
+      const newSrch = document.getElementById('srch');
+      if (newSrch) {
+        newSrch.focus();
+        // Placer le curseur à la fin du texte (ou à la position précédente)
+        const pos = srchCursorPos !== null ? srchCursorPos : newSrch.value.length;
+        newSrch.setSelectionRange(pos, pos);
+      }
+    }
+  }
 }
 
 // ── RESTAURATION DES FILTRES APRÈS RE-RENDER ────────────
@@ -373,9 +393,13 @@ function buildListView() {
   const ctrlHTML=`<div class="ctrl-bar">
     <div class="search-wrap">
       <span class="search-icon">🔍</span>
-      <input type="text" id="srch" placeholder="Rechercher composant, type, technicien…"
+      <input type="text" id="srch"
+        placeholder="Rechercher composant, type, technicien…"
         value="${esc(filterState.srch)}"
-        oninput="onFilterChange()"/>
+        autocomplete="off"
+        spellcheck="false"
+        oninput="onFilterChange()"
+        onkeydown="event.stopPropagation()"/>
     </div>
     ${machineFilter}
     <select id="fltCrit" onchange="onFilterChange()">
@@ -685,36 +709,73 @@ function downloadMachinePlanning(machineName) {
   const now = new Date();
   const currentWeek = getWeekNumber(now);
 
-  const wsInfo = XLSX.utils.aoa_to_sheet([
-    ['PLANNING DE GRAISSAGE & VIDANGE',''],
-    ['Machine :', machineName],
-    ['Exporté le :', fmtD(today())],
-    ['Année :', calYear],
-    ['Technicien(s) :', [...new Set(machineTasks.map(t=>getTechName(t.techId)))].join(', ')],
+  // Feuille Base_Equipements (comme dans les photos)
+  const infoHeader = ['ÉQUIPEMENT','SOUS-ÉQUIPEMENT','LUBRIFIANT','FRÉQUENCE','TECHNICIEN','PROCHAINE ÉCHÉANCE','STATUT'];
+  const infoRows = machineTasks.map(t => [
+    t.comp, t.note ? t.note.substring(0,50) : '', t.prod||'',
+    t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))
   ]);
-  XLSX.utils.book_append_sheet(wb, wsInfo, 'Infos');
+  const wsInfo = XLSX.utils.aoa_to_sheet([infoHeader, ...infoRows]);
+  wsInfo['!cols'] = [{wch:20},{wch:35},{wch:22},{wch:14},{wch:18},{wch:14},{wch:12}];
+  for (let ci = 0; ci < infoHeader.length; ci++) {
+    const ref = XLSX.utils.encode_cell({r:0,c:ci});
+    if (!wsInfo[ref]) continue;
+    wsInfo[ref].s = {
+      fill:{patternType:'solid',fgColor:{rgb:'1E3A5F'}},
+      font:{bold:true,color:{rgb:'FFFFFF'},sz:10,name:'Calibri'},
+      alignment:{horizontal:'center',vertical:'center'},
+      border:{top:{style:'thin',color:{rgb:'D1D5DB'}},bottom:{style:'medium',color:{rgb:'374151'}},left:{style:'thin',color:{rgb:'D1D5DB'}},right:{style:'thin',color:{rgb:'D1D5DB'}}}
+    };
+  }
+  infoRows.forEach((row,ri)=>{
+    const bg=ri%2===0?'FFFFFF':'F1F5F9';
+    for(let ci=0;ci<row.length;ci++){
+      const ref=XLSX.utils.encode_cell({r:ri+1,c:ci});
+      if(!wsInfo[ref]) wsInfo[ref]={t:'s',v:''};
+      wsInfo[ref].s={fill:{patternType:'solid',fgColor:{rgb:bg}},font:{sz:9,name:'Calibri'},alignment:{horizontal:'left',vertical:'center'},border:{top:{style:'thin',color:{rgb:'E5E7EB'}},bottom:{style:'thin',color:{rgb:'E5E7EB'}},left:{style:'thin',color:{rgb:'E5E7EB'}},right:{style:'thin',color:{rgb:'E5E7EB'}}}};
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, wsInfo, 'Base_Equipements');
 
-  buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Graisse'), weeks, calYear, currentWeek, `Graissage ${calYear}`, 'G',
-    { planned:'FFFF00', done:'92D050', late:'FF0000', header:'1A365D', headerFont:'FFFFFF' }
+  // Feuille Planning Graissage (nom comme dans les photos)
+  buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Graisse'), weeks, calYear, currentWeek,
+    `Planning_Graissage_${calYear}`, 'G',
+    { planned:'FFD700', done:'22C55E', late:'EF4444', header:'1E3A5F', headerFont:'FFFFFF' }
   );
 
-  buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Huile'), weeks, calYear, currentWeek, `Vidange ${calYear}`, 'V',
-    { planned:'FF0000', done:'00B0F0', late:'FF6600', header:'1A365D', headerFont:'FFFFFF' }
+  // Feuille Planning Vidange (nom comme dans les photos)
+  buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Huile'), weeks, calYear, currentWeek,
+    `Planning_Vidange_${calYear}`, 'V',
+    { planned:'DC2626', done:'38BDF8', late:'B91C1C', header:'1E3A5F', headerFont:'FFFFFF' }
   );
 
-  const histHeader = ['Date','Équipement','Type','Produit','Technicien','Statut'];
+  // Feuille Historique
+  const histHeader = ['DATE','ÉQUIPEMENT','LOCALISATION','TYPE','PRODUIT','TECHNICIEN','STATUT'];
   const histRows = [];
   machineTasks.forEach(t => {
     (t.hist||[]).forEach(d => {
-      // FIX: Ne pas afficher "—" si la date est valide
       const dateStr = fmtD(d);
-      histRows.push([dateStr !== '—' ? dateStr : 'Date inconnue', t.comp, t.type, t.prod||'—', getTechName(t.techId), 'Effectué']);
+      if (dateStr !== '—') {
+        histRows.push([dateStr, t.comp, t.loc||'', t.type, t.prod||'—', getTechName(t.techId), 'Effectué']);
+      }
     });
   });
-  if (!histRows.length) histRows.push(['Aucune intervention enregistrée','','','','','']);
+  if (!histRows.length) histRows.push(['Aucune intervention enregistrée','','','','','','']);
   const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
-  wsHist['!cols'] = [{wch:14},{wch:25},{wch:10},{wch:28},{wch:18},{wch:12}];
-  styleHeaderRow(wsHist, histHeader.length, '1A365D', 'FFFFFF');
+  wsHist['!cols'] = [{wch:14},{wch:20},{wch:16},{wch:10},{wch:22},{wch:18},{wch:12}];
+  for(let ci=0;ci<histHeader.length;ci++){
+    const ref=XLSX.utils.encode_cell({r:0,c:ci});
+    if(!wsHist[ref]) continue;
+    wsHist[ref].s={fill:{patternType:'solid',fgColor:{rgb:'1E3A5F'}},font:{bold:true,color:{rgb:'FFFFFF'},sz:10,name:'Calibri'},alignment:{horizontal:'center',vertical:'center'},border:{top:{style:'thin',color:{rgb:'D1D5DB'}},bottom:{style:'medium',color:{rgb:'374151'}},left:{style:'thin',color:{rgb:'D1D5DB'}},right:{style:'thin',color:{rgb:'D1D5DB'}}}};
+  }
+  histRows.forEach((row,ri)=>{
+    const bg=ri%2===0?'FFFFFF':'F1F5F9';
+    for(let ci=0;ci<row.length;ci++){
+      const ref=XLSX.utils.encode_cell({r:ri+1,c:ci});
+      if(!wsHist[ref]) wsHist[ref]={t:'s',v:''};
+      wsHist[ref].s={fill:{patternType:'solid',fgColor:{rgb:bg}},font:{sz:9,name:'Calibri'},alignment:{horizontal:'left',vertical:'center'},border:{top:{style:'thin',color:{rgb:'E5E7EB'}},bottom:{style:'thin',color:{rgb:'E5E7EB'}},left:{style:'thin',color:{rgb:'E5E7EB'}},right:{style:'thin',color:{rgb:'E5E7EB'}}}};
+    }
+  });
   XLSX.utils.book_append_sheet(wb, wsHist, 'Historique');
 
   const safeName = machineName.replace(/[/\\:*?"<>|]/g,'_');
@@ -723,39 +784,85 @@ function downloadMachinePlanning(machineName) {
 }
 
 function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, letter, colors) {
-  const aoa = [];
+  if (!taskList.length) return; // Ne pas créer de feuille vide
 
-  const monthRow = ['ÉQUIPEMENT', 'LUBRIFIANT', 'FRÉQUENCE'];
+  const aoa = [];
+  const cellStyleMap = {}; // ri_ci => style object
+
   const now = new Date();
-  const monthWeekMap = {};
+
+  // ── Calcul du mapping semaine → mois ──
+  const monthWeekMap = {}; // weekNum => monthIndex
+  // On construit la liste des plages de semaines par mois
+  const monthRanges = []; // [{mo, wStart, wEnd}]
   for (let mo = 0; mo < 12; mo++) {
     const firstDay = new Date(yr, mo, 1);
     const lastDay  = new Date(yr, mo + 1, 0);
-    let wS = getWeekNumber(firstDay), wE = getWeekNumber(lastDay);
-    if (wS > wE) wE = wS;
-    for (let w = wS; w <= wE && w <= 52; w++) {
+    let wS = getWeekNumber(firstDay);
+    let wE = getWeekNumber(lastDay);
+    // Semaine 53 ou chevauchement de fin d'année
+    if (wS > 50 && mo === 0) wS = 1;
+    if (wE < wS) wE = wS;
+    monthRanges.push({ mo, wStart: wS, wEnd: Math.min(wE, 52) });
+    for (let w = wS; w <= Math.min(wE, 52); w++) {
       if (!monthWeekMap[w]) monthWeekMap[w] = mo;
     }
   }
+
+  // ── Ligne 0 : En-têtes des mois (colspan simulé par répétition de valeur) ──
+  // En Excel, on ne peut pas faire de colspan en AOA, donc on met le nom du mois
+  // dans la première colonne de chaque groupe de semaines, et '' ailleurs.
+  // On va styler toutes les cellules d'un même mois avec la même couleur.
+  const monthRow = ['ÉQUIPEMENT', 'SOUS-ÉQUIPEMENT', 'LUBRIFIANT'];
+  // Pour chaque semaine, on met le label du mois si c'est la première semaine du mois, sinon ''
+  const monthStartWeeks = new Set();
+  monthRanges.forEach(mr => monthStartWeeks.add(mr.wStart));
   weeks.forEach(w => {
-    const mo = monthWeekMap[w] !== undefined ? monthWeekMap[w] : -1;
-    monthRow.push(mo >= 0 ? MONTHS_S[mo] : '');
+    const mo = monthWeekMap[w];
+    monthRow.push((mo !== undefined && monthStartWeeks.has(w)) ? MONTHS_S[mo] : '');
   });
   aoa.push(monthRow);
 
-  const weekRow = ['ÉQUIPEMENT', 'LUBRIFIANT', 'FRÉQUENCE', ...weeks.map(w => `S${w}`)];
+  // ── Ligne 1 : Numéros de semaines ──
+  const weekRow = ['ÉQUIPEMENT', 'SOUS-ÉQUIPEMENT', 'LUBRIFIANT', ...weeks.map(w => `S${w}`)];
   aoa.push(weekRow);
 
+  // ── Lignes de données : groupées par équipement (comp) ──
+  // Chaque tâche correspond à une ligne avec son sous-équipement (note courte) et son lubrifiant (prod)
   const byMachine = {};
-  taskList.forEach(t => { if (!byMachine[t.comp]) byMachine[t.comp] = []; byMachine[t.comp].push(t); });
+  taskList.forEach(t => {
+    if (!byMachine[t.comp]) byMachine[t.comp] = [];
+    byMachine[t.comp].push(t);
+  });
+
+  // Alternance de couleur de fond par groupe d'équipement
+  const rowBgColors = ['FFFFFF', 'F8FAFC']; // blanc / gris très clair
+  let machIdx = 0;
 
   Object.keys(byMachine).sort().forEach(machineName => {
-    byMachine[machineName].forEach(t => {
+    const machineTasks = byMachine[machineName];
+    const rowBg = rowBgColors[machIdx % 2];
+    machIdx++;
+
+    machineTasks.forEach((t, tIdx) => {
       const activeWeeks = getActiveWeeksClean(t, yr);
-      const row = [machineName, t.prod || t.note.substring(0,40), t.freq];
+      // Col 0: Nom équipement (seulement sur la 1ère ligne du groupe, sinon '')
+      // Col 1: Sous-équipement = note courte
+      // Col 2: Lubrifiant = prod
+      const subEquip = t.note ? t.note.substring(0, 45) + (t.note.length > 45 ? '…' : '') : '';
+      const lubrifiant = t.prod || '';
+      const row = [
+        tIdx === 0 ? machineName : '', // Équipement uniquement sur 1ère ligne
+        subEquip,
+        lubrifiant
+      ];
+
       weeks.forEach(w => {
-        if (!activeWeeks.has(w)) { row.push(''); return; }
-        row.push(letter);
+        if (!activeWeeks.has(w)) {
+          row.push('');
+        } else {
+          row.push(letter);
+        }
       });
       aoa.push(row);
     });
@@ -763,56 +870,171 @@ function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, lette
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  aoa.forEach((rowData, ri) => {
-    rowData.forEach((cell, ci) => {
-      const ref = XLSX.utils.encode_cell({r: ri, c: ci});
-      if (!ws[ref]) return;
+  // ── Application des styles cellule par cellule ──
+  const totalRows = aoa.length;
+  const totalCols = 3 + weeks.length;
 
-      let fgColor = null, fontColor = 'FF000000', bold = false;
+  for (let ri = 0; ri < totalRows; ri++) {
+    for (let ci = 0; ci < totalCols; ci++) {
+      const ref = XLSX.utils.encode_cell({ r: ri, c: ci });
+      if (!ws[ref] && ri >= 2) {
+        // Créer la cellule vide pour pouvoir lui appliquer un fond
+        ws[ref] = { t: 's', v: '' };
+      }
+      if (!ws[ref]) continue;
+
+      const cell = aoa[ri][ci];
+      let s = {};
+
+      const thinBorder = {
+        top:    { style: 'thin', color: { rgb: 'D1D5DB' } },
+        bottom: { style: 'thin', color: { rgb: 'D1D5DB' } },
+        left:   { style: 'thin', color: { rgb: 'D1D5DB' } },
+        right:  { style: 'thin', color: { rgb: 'D1D5DB' } }
+      };
+      const thickBorderRight = {
+        top:    { style: 'thin',   color: { rgb: 'D1D5DB' } },
+        bottom: { style: 'thin',   color: { rgb: 'D1D5DB' } },
+        left:   { style: 'thin',   color: { rgb: 'D1D5DB' } },
+        right:  { style: 'medium', color: { rgb: '374151' } }
+      };
 
       if (ri === 0) {
-        fgColor = colors.header; fontColor = colors.headerFont; bold = true;
-      } else if (ri === 1) {
-        if (ci < 3) { fgColor = colors.header; fontColor = colors.headerFont; bold = true; }
-        else {
-          const weekNum = ci - 2;
-          fgColor = weekNum === currentWeek && yr === now.getFullYear() ? 'E53E3E' : '2D4A7A';
-          fontColor = 'FFFFFFFF'; bold = true;
-        }
-      } else if (ri >= 2) {
-        if (ci === 0) { fgColor = 'EDF2F7'; bold = true; }
-        else if (ci === 1 || ci === 2) { fgColor = 'F7FAFC'; }
-        else if (cell === letter) {
-          const weekNum = ci - 2;
-          const isPast = weekNum < currentWeek && yr === now.getFullYear();
-          const isCur  = weekNum === currentWeek && yr === now.getFullYear();
-          fgColor = isCur ? 'E53E3E' : isPast ? colors.late : colors.planned;
-          fontColor = (colors.planned === 'FFFF00' && !isCur && !isPast) ? 'FF7B341E' : 'FFFFFFFF';
-          bold = true;
-        }
-      }
-
-      if (fgColor) {
-        ws[ref].s = {
-          fill: { patternType: 'solid', fgColor: { rgb: fgColor } },
-          font: { bold, color: { rgb: fontColor }, sz: 9, name: 'Calibri' },
-          alignment: { horizontal: 'center', vertical: 'center' },
-          border: {
-            top:    { style: 'thin', color: { rgb: 'CBD5E0' } },
-            bottom: { style: 'thin', color: { rgb: 'CBD5E0' } },
-            left:   { style: 'thin', color: { rgb: 'CBD5E0' } },
-            right:  { style: 'thin', color: { rgb: 'CBD5E0' } }
-          }
+        // ── Ligne mois ──
+        const mo = ci >= 3 ? monthWeekMap[ci - 2] : null;
+        // Couleurs alternées par mois pour la ligne de mois
+        const moColors = ['1E3A5F','1E4976','1A3A5C','153158'];
+        const moBg = mo !== undefined ? moColors[mo % moColors.length] : '1E3A5F';
+        const isFirstColOfMonth = ci >= 3 && monthStartWeeks.has(ci - 2);
+        s = {
+          fill: { patternType: 'solid', fgColor: { rgb: ci < 3 ? '1E3A5F' : moBg } },
+          font: { bold: true, color: { rgb: 'FFFFFF' }, sz: ci < 3 ? 10 : 9, name: 'Calibri' },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
+          border: ci === 2 ? thickBorderRight : thinBorder
         };
-      }
-    });
-  });
 
+      } else if (ri === 1) {
+        // ── Ligne numéros de semaine ──
+        const weekNum = ci - 2; // offset: col 3 = S1
+        const isCurWeek = weekNum === currentWeek && yr === now.getFullYear();
+        let bg, fc;
+        if (ci < 3) {
+          bg = '1E3A5F'; fc = 'FFFFFF';
+        } else if (isCurWeek) {
+          bg = 'DC2626'; fc = 'FFFFFF'; // rouge vif = semaine courante
+        } else {
+          bg = '2D5282'; fc = 'FFFFFF'; // bleu foncé standard
+        }
+        s = {
+          fill: { patternType: 'solid', fgColor: { rgb: bg } },
+          font: { bold: true, color: { rgb: fc }, sz: 8, name: 'Calibri' },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: ci === 2 ? thickBorderRight : thinBorder
+        };
+
+      } else {
+        // ── Lignes de données ──
+        // Déterminer la couleur de fond du groupe (alternance)
+        // On recalcule l'index de groupe pour cette ligne
+        let rowGroupBg = 'FFFFFF';
+        let cumulRows = 2; // après les 2 lignes header
+        let gIdx = 0;
+        let found = false;
+        for (const machineName of Object.keys(byMachine).sort()) {
+          const len = byMachine[machineName].length;
+          if (ri >= cumulRows && ri < cumulRows + len) {
+            rowGroupBg = gIdx % 2 === 0 ? 'FFFFFF' : 'F1F5F9';
+            // Vérifier si c'est la 1ère ligne du groupe (pour style équipement)
+            found = true;
+            break;
+          }
+          cumulRows += len;
+          gIdx++;
+        }
+
+        if (ci === 0) {
+          // Colonne ÉQUIPEMENT : fond bleu très clair, texte gras bleu foncé
+          s = {
+            fill: { patternType: 'solid', fgColor: { rgb: cell ? 'DBEAFE' : rowGroupBg } },
+            font: { bold: !!cell, color: { rgb: cell ? '1E3A5F' : '374151' }, sz: 9, name: 'Calibri' },
+            alignment: { horizontal: 'left', vertical: 'center', wrapText: false },
+            border: { ...thinBorder, right: { style: 'thin', color: { rgb: '93C5FD' } } }
+          };
+        } else if (ci === 1) {
+          // Colonne SOUS-ÉQUIPEMENT
+          s = {
+            fill: { patternType: 'solid', fgColor: { rgb: rowGroupBg } },
+            font: { color: { rgb: '374151' }, sz: 8, name: 'Calibri' },
+            alignment: { horizontal: 'left', vertical: 'center', wrapText: false },
+            border: thinBorder
+          };
+        } else if (ci === 2) {
+          // Colonne LUBRIFIANT
+          s = {
+            fill: { patternType: 'solid', fgColor: { rgb: rowGroupBg } },
+            font: { bold: !!cell, color: { rgb: '1E40AF' }, sz: 8, name: 'Calibri' },
+            alignment: { horizontal: 'left', vertical: 'center', wrapText: false },
+            border: thickBorderRight
+          };
+        } else {
+          // Colonnes semaines
+          const weekNum = ci - 2;
+          const isCurWeek = weekNum === currentWeek && yr === now.getFullYear();
+          const isPastWeek = weekNum < currentWeek && yr === now.getFullYear();
+
+          if (cell === letter) {
+            // Cellule active (intervention planifiée ou effectuée)
+            let bg, fc;
+            if (isCurWeek) {
+              // Semaine courante → rouge vif (comme la photo)
+              bg = 'DC2626'; fc = 'FFFFFF';
+            } else if (isPastWeek) {
+              // Passé non effectué → rouge moyen pour graisse, rouge sombre pour vidange
+              bg = letter === 'G' ? 'EF4444' : 'B91C1C'; fc = 'FFFFFF';
+            } else {
+              // Futur planifié → jaune vif pour G, rouge pour V (exactement comme les photos)
+              bg = letter === 'G' ? 'FFD700' : 'DC2626';
+              fc = letter === 'G' ? '78350F' : 'FFFFFF'; // texte sombre sur jaune
+            }
+            s = {
+              fill: { patternType: 'solid', fgColor: { rgb: bg } },
+              font: { bold: true, color: { rgb: fc }, sz: 8, name: 'Calibri' },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: thinBorder
+            };
+          } else {
+            // Cellule vide
+            s = {
+              fill: { patternType: 'solid', fgColor: { rgb: rowGroupBg } },
+              font: { sz: 8 },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: thinBorder
+            };
+          }
+        }
+      }
+
+      ws[ref].s = s;
+    }
+  }
+
+  // ── Largeurs colonnes : col 0-1-2 larges, semaines étroites (comme les photos) ──
   ws['!cols'] = [
-    {wch:22}, {wch:28}, {wch:14},
-    ...Array(52).fill({wch:4})
+    { wch: 20 }, // ÉQUIPEMENT
+    { wch: 30 }, // SOUS-ÉQUIPEMENT
+    { wch: 20 }, // LUBRIFIANT
+    ...Array(52).fill({ wch: 3.5 }) // Semaines S1-S52 très étroites
   ];
-  ws['!rows'] = [{hpt:18},{hpt:16},...Array(aoa.length-2).fill({hpt:15})];
+
+  // ── Hauteurs de lignes ──
+  ws['!rows'] = [
+    { hpt: 16 }, // ligne mois
+    { hpt: 14 }, // ligne semaines
+    ...Array(aoa.length - 2).fill({ hpt: 14 }) // données
+  ];
+
+  // ── Freeze panes : figer les 3 premières colonnes et 2 premières lignes ──
+  ws['!freeze'] = { xSplit: 3, ySplit: 2 };
 
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
 }
@@ -837,26 +1059,50 @@ function downloadAllPlannings() {
   const now = new Date();
   const currentWeek = getWeekNumber(now);
 
-  getMachineList().forEach(machineName => {
-    const machineTasks = tasks.filter(t => t.loc === machineName);
-    const sheetBase = machineName.substring(0,20).replace(/[/\\:*?"<>[\]]/g,'_');
-
-    buildWeeklySheet(wb, machineTasks.filter(t=>t.type==='Graisse'), weeks, calYear, currentWeek,
-      `${sheetBase}_G`, 'G',
-      { planned:'FFFF00', done:'92D050', late:'FF0000', header:'1A365D', headerFont:'FFFFFF' }
-    );
-    buildWeeklySheet(wb, machineTasks.filter(t=>t.type==='Huile'), weeks, calYear, currentWeek,
-      `${sheetBase}_V`, 'V',
-      { planned:'FF0000', done:'00B0F0', late:'FF6600', header:'1A365D', headerFont:'FFFFFF' }
-    );
-  });
-
-  const recapHeader = ['Machine','Localisation','Criticité','Type','Produit','Fréquence','Technicien','Prochaine échéance','Statut'];
-  const recapRows = tasks.map(t => [t.comp, t.loc||'', cLabel(t.crit), t.type, t.prod, t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))]);
+  // Feuille "Base_Equipements" : récapitulatif de toutes les tâches (comme dans les photos)
+  const recapHeader = ['ÉQUIPEMENT','LOCALISATION','CRITICITÉ','TYPE','PRODUIT','FRÉQUENCE','TECHNICIEN','PROCHAINE ÉCHÉANCE','STATUT'];
+  const recapRows = tasks.map(t => [t.comp, t.loc||'', cLabel(t.crit), t.type, t.prod||'', t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))]);
   const wsRecap = XLSX.utils.aoa_to_sheet([recapHeader, ...recapRows]);
   wsRecap['!cols'] = [{wch:22},{wch:18},{wch:12},{wch:10},{wch:25},{wch:14},{wch:18},{wch:14},{wch:12}];
-  styleHeaderRow(wsRecap, recapHeader.length, '1A365D', 'FFFFFF');
-  XLSX.utils.book_append_sheet(wb, wsRecap, 'Récapitulatif');
+  // Style en-tête récapitulatif
+  for (let ci = 0; ci < recapHeader.length; ci++) {
+    const ref = XLSX.utils.encode_cell({r:0, c:ci});
+    if (!wsRecap[ref]) continue;
+    wsRecap[ref].s = {
+      fill: { patternType:'solid', fgColor:{rgb:'1E3A5F'} },
+      font: { bold:true, color:{rgb:'FFFFFF'}, sz:10, name:'Calibri' },
+      alignment: { horizontal:'center', vertical:'center' },
+      border: { top:{style:'thin',color:{rgb:'D1D5DB'}}, bottom:{style:'medium',color:{rgb:'374151'}}, left:{style:'thin',color:{rgb:'D1D5DB'}}, right:{style:'thin',color:{rgb:'D1D5DB'}} }
+    };
+  }
+  // Style lignes données alternées
+  recapRows.forEach((row, ri) => {
+    const bg = ri % 2 === 0 ? 'FFFFFF' : 'F1F5F9';
+    for (let ci = 0; ci < row.length; ci++) {
+      const ref = XLSX.utils.encode_cell({r: ri+1, c:ci});
+      if (!wsRecap[ref]) wsRecap[ref] = {t:'s', v:''};
+      wsRecap[ref].s = {
+        fill: { patternType:'solid', fgColor:{rgb:bg} },
+        font: { sz:9, name:'Calibri', color:{rgb:'374151'} },
+        alignment: { horizontal:'left', vertical:'center' },
+        border: { top:{style:'thin',color:{rgb:'E5E7EB'}}, bottom:{style:'thin',color:{rgb:'E5E7EB'}}, left:{style:'thin',color:{rgb:'E5E7EB'}}, right:{style:'thin',color:{rgb:'E5E7EB'}} }
+      };
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, wsRecap, 'Base_Equipements');
+
+  // Feuilles Planning Graissage et Vidange globales (noms comme dans les photos)
+  const allGraisses = tasks.filter(t => t.type === 'Graisse');
+  const allHuiles   = tasks.filter(t => t.type === 'Huile');
+
+  buildWeeklySheet(wb, allGraisses, weeks, calYear, currentWeek,
+    `Planning_Graissage_${calYear}`, 'G',
+    { planned:'FFD700', done:'22C55E', late:'EF4444', header:'1E3A5F', headerFont:'FFFFFF' }
+  );
+  buildWeeklySheet(wb, allHuiles, weeks, calYear, currentWeek,
+    `Planning_Vidange_${calYear}`, 'V',
+    { planned:'DC2626', done:'38BDF8', late:'B91C1C', header:'1E3A5F', headerFont:'FFFFFF' }
+  );
 
   XLSX.writeFile(wb, `LubriPlan_Planning_Complet_${calYear}.xlsx`);
   toast('📊 Planning complet téléchargé');
@@ -1194,4 +1440,5 @@ document.addEventListener('keydown',e=>{
 
 // ── BOOT ─────────────────────────────────────────────────
 loadData();
+
 
