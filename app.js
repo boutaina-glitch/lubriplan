@@ -452,13 +452,10 @@ function buildCalView(){
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${machSelect}${dlBtn}</div>
     <div class="cal-legend">
-      ${isGraisse
-        ?`<span><span class="leg-sq" style="background:#FFD700;border:1px solid #B8860B"></span>G — Graissage planifié</span>
-          <span><span class="leg-sq" style="background:#E53E3E;border:1px solid #9B1C1C"></span>G — Semaine courante</span>
-          <span><span class="leg-sq" style="background:#38A169;border:1px solid #276749"></span>G — Effectué</span>`
-        :`<span><span class="leg-sq" style="background:#DC2626;border:1px solid #9B1C1C"></span>V — Vidange planifiée</span>
-          <span><span class="leg-sq" style="background:#38BDF8;border:1px solid #0284C7"></span>V — Effectuée</span>`
-      }
+      <span><span class="leg-sq" style="background:#22C55E;border:1px solid #15803D"></span>Effectué</span>
+      <span><span class="leg-sq" style="background:#3B82F6;border:1px solid #1D4ED8"></span>Planifié</span>
+      <span><span class="leg-sq" style="background:#EF4444;border:1px solid #B91C1C"></span>En retard</span>
+      <span><span class="leg-sq" style="background:#F59E0B;border:1px solid #B45309"></span>Bientôt (≤7j)</span>
     </div>
   </div>`;
   let displayTasks=calFilterMachine?tasks.filter(t=>t.loc===calFilterMachine):(isAdmin()?tasks:tasks.filter(t=>t.techId===currentUser.id));
@@ -483,13 +480,23 @@ function buildCalView(){
         if(!activeWeeks.has(w)) return`<td style="border:1px solid #e2e8f0;background:${rowBg}"></td>`;
         const isCur=w===currentWeek&&calYear===now.getFullYear();
         const isPast=w<currentWeek&&calYear===now.getFullYear();
-        let bg,border,color,content=isGraisse?'G':'V';
-        if(t.done){bg=isGraisse?'#38A169':'#38BDF8';border=isGraisse?'#276749':'#0284C7';color='#fff';}
-        else if(isCur){bg='#E53E3E';border='#9B1C1C';color='#fff';}
-        else if(isPast&&t.crit===1){bg='#E53E3E';border='#9B1C1C';color='#fff';}
-        else if(isPast){bg=isGraisse?'#F6AD55':'#FC8181';border=isGraisse?'#C05621':'#9B1C1C';color='#7B341E';}
-        else{bg=isGraisse?'#FFD700':'#DC2626';border=isGraisse?'#B8860B':'#9B1C1C';color=isGraisse?'#7B341E':'#fff';}
-        return`<td style="border:1px solid #e2e8f0;background:${rowBg};padding:1px"><div onclick="calClickWeek(${si},${w})" title="${esc(t.comp)} — ${t.freq} — S${w}" style="background:${bg};border:1px solid ${border};color:${color};width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;margin:auto;cursor:pointer;border-radius:2px;user-select:none">${content}</div></td>`;
+        const isSoon=!isPast&&!isCur&&(w-currentWeek)<=1&&calYear===now.getFullYear();
+        const letter=isGraisse?'G':'V';
+        let bg,border,color;
+        if(t.done){
+          // ✅ VERT — effectué
+          bg='#22C55E';border='#15803D';color='#fff';
+        } else if(isPast||isCur){
+          // 🔴 ROUGE — en retard ou semaine courante non faite
+          bg='#EF4444';border='#B91C1C';color='#fff';
+        } else if(isSoon){
+          // 🟡 ORANGE — bientôt (semaine prochaine)
+          bg='#F59E0B';border='#B45309';color='#fff';
+        } else {
+          // 🔵 BLEU — planifié futur
+          bg='#3B82F6';border='#1D4ED8';color='#fff';
+        }
+        return`<td style="border:1px solid #e2e8f0;background:${rowBg};padding:1px"><div onclick="calClickWeek(${si},${w})" title="${esc(t.comp)} — ${t.freq} — S${w}${t.done?' ✓ Effectué':isPast?' ⚠ En retard':' 📅 Planifié'}" style="background:${bg};border:1px solid ${border};color:${color};width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;margin:auto;cursor:pointer;border-radius:2px;user-select:none">${letter}</div></td>`;
       }).join('');
       if(tIdx===0){
         rowsHTML+=`<tr style="background:${rowBg}"><td rowspan="${machineTasks.length}" style="border:1px solid #cbd5e0;border-right:2px solid #2d4a7a;padding:6px 10px;vertical-align:middle;background:#edf2f7"><div style="font-size:12px;font-weight:800;color:#1a365d;text-transform:uppercase;letter-spacing:0.5px">${esc(machineName)}</div></td><td style="border:1px solid #cbd5e0;padding:4px 8px;font-size:11px;color:#4a5568;white-space:nowrap;min-width:120px">${esc(t.prod||t.note.substring(0,30)+(t.note.length>30?'…':''))}</td><td style="border:1px solid #cbd5e0;padding:4px 8px;font-size:11px;color:#4a5568;white-space:nowrap">${t.freq}</td>${weekCells}</tr>`;
@@ -638,19 +645,21 @@ function buildWeeklySheet(wb,taskList,weeks,yr,currentWeek,sheetName,letter) {
   if(!taskList.length) return;
   const now=new Date();
 
-  // Palettes couleurs exactes photos
+  // Palettes couleurs identiques au planning web : vert/bleu/rouge
   const PAL = {
     G: {
-      future:  {bg:'FFD700', fg:'000000'}, // jaune vif, texte noir (photo 1)
-      current: {bg:'E53E3E', fg:'FFFFFF'}, // rouge, blanc
-      past:    {bg:'E53E3E', fg:'FFFFFF'}, // rouge, blanc
-      done:    {bg:'22C55E', fg:'FFFFFF'}, // vert, blanc
+      future:  {bg:'3B82F6', fg:'FFFFFF'}, // 🔵 bleu — planifié futur
+      soon:    {bg:'F59E0B', fg:'FFFFFF'}, // 🟡 orange — bientôt
+      current: {bg:'EF4444', fg:'FFFFFF'}, // 🔴 rouge — semaine courante non faite
+      past:    {bg:'EF4444', fg:'FFFFFF'}, // 🔴 rouge — en retard
+      done:    {bg:'22C55E', fg:'FFFFFF'}, // 🟢 vert — effectué
     },
     V: {
-      future:  {bg:'DC2626', fg:'FFFFFF'}, // rouge vif, blanc (photo 2)
-      current: {bg:'DC2626', fg:'FFFFFF'}, // idem
-      past:    {bg:'991B1B', fg:'FFFFFF'}, // rouge sombre, blanc
-      done:    {bg:'38BDF8', fg:'FFFFFF'}, // bleu ciel, blanc (photo 2)
+      future:  {bg:'3B82F6', fg:'FFFFFF'}, // 🔵 bleu
+      soon:    {bg:'F59E0B', fg:'FFFFFF'}, // 🟡 orange
+      current: {bg:'EF4444', fg:'FFFFFF'}, // 🔴 rouge
+      past:    {bg:'EF4444', fg:'FFFFFF'}, // 🔴 rouge
+      done:    {bg:'22C55E', fg:'FFFFFF'}, // 🟢 vert
     }
   };
   const C=PAL[letter];
