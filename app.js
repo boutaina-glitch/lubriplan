@@ -1,5 +1,5 @@
 // LubriPlan — app.js
-// ✅ Filtre par machine (composant)
+// ✅ Filtre par machine (localisation)
 // ✅ Export Excel (.xlsx) et CSV
 // ✅ Import Excel (.xlsx) et CSV
 // ✅ Téléchargement planning par machine
@@ -144,9 +144,9 @@ function resetAllData() {
 const nextTaskId = () => tasks.reduce((m,t) => Math.max(m,t.id), 0) + 1;
 const nextUserId = () => users.reduce((m,u) => Math.max(m,u.id), 0) + 1;
 
-// ── LISTE DES MACHINES (unique, triée) ─────────────────
+// ── LISTE DES MACHINES (unique, triée) — basée sur t.loc ─
 function getMachineList() {
-  return [...new Set(tasks.map(t => t.comp))].sort();
+  return [...new Set(tasks.map(t => t.loc).filter(Boolean))].sort();
 }
 
 // ── AUTH ────────────────────────────────────────────────
@@ -238,7 +238,7 @@ function getStats() {
   return { total, done, late, soon, crit1, pct: total ? Math.round(done/total*100) : 0 };
 }
 
-// ── GET FILTERED (avec filtre machine + recherche) ──────
+// ── GET FILTERED (filtre machine basé sur t.loc) ─────────
 function getFiltered() {
   const fc  = document.getElementById('fltCrit')?.value || '';
   const ft  = document.getElementById('fltType')?.value || '';
@@ -249,8 +249,8 @@ function getFiltered() {
   let list  = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
   return list.filter(t => {
     const s = getStatus(t);
-    // Filtre machine (composant exact)
-    if (fm && t.comp !== fm) return false;
+    // Filtre machine (localisation)
+    if (fm && t.loc !== fm) return false;
     // Filtre criticité
     if (fc && t.crit != fc) return false;
     // Filtre type
@@ -259,7 +259,7 @@ function getFiltered() {
     if (fth && t.techId != fth) return false;
     // Filtre statut
     if (fs && s !== fs) return false;
-    // Recherche texte (composant, technicien, produit, localisation, remarque)
+    // Recherche texte
     if (q) {
       const searchFields = [
         t.comp, t.prod, t.loc, t.note, t.freq, t.qty, t.type,
@@ -303,7 +303,7 @@ function buildListView() {
 
   const techFilter=isAdmin()?`<select id="fltTech" onchange="render()"><option value="">Tous techniciens</option>${techs.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>`:'';
 
-  // Filtre machine
+  // Filtre machine basé sur la localisation (t.loc)
   const machineFilter=`<select id="fltMach" onchange="render()" style="max-width:200px"><option value="">Toutes machines</option>${machines.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>`;
 
   const ctrlHTML=`<div class="ctrl-bar">
@@ -338,16 +338,14 @@ function buildListView() {
 
 // ── CALENDAR VIEW ────────────────────────────────────────
 function buildCalView() {
-  const machines = getMachineList();
-  const all = getFiltered(); // utilise les filtres actuels
+  const machines = getMachineList(); // basé sur t.loc
 
-  // Sélecteur machine pour le planning
+  // Sélecteur machine pour le planning (valeurs = t.loc)
   const machSelect = `<select id="calMachFilter" onchange="calFilterMachine=this.value;render()" style="font-family:var(--font);font-size:13px;padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);outline:none;height:34px">
     <option value="">Toutes les machines</option>
     ${machines.map(m=>`<option value="${esc(m)}"${calFilterMachine===m?' selected':''}>${esc(m)}</option>`).join('')}
   </select>`;
 
-  // Bouton télécharger planning machine sélectionnée
   const dlBtn = calFilterMachine
     ? `<button class="btn btn-s btn-sm" onclick="downloadMachinePlanning('${esc(calFilterMachine).replace(/'/g,"\\'")}')">📥 Télécharger planning machine</button>`
     : `<button class="btn btn-s btn-sm" onclick="downloadAllPlannings()">📥 Télécharger tout (Excel)</button>`;
@@ -369,9 +367,9 @@ function buildCalView() {
     </div>
   </div>`;
 
-  // Filtrer par machine si sélectionnée
+  // ✅ CORRECTION : filtre par t.loc (localisation) et non t.comp
   let displayTasks = calFilterMachine
-    ? tasks.filter(t => t.comp === calFilterMachine)
+    ? tasks.filter(t => t.loc === calFilterMachine)
     : (isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id));
 
   const now=new Date();
@@ -404,8 +402,9 @@ function calClick(si) {
 }
 
 // ── TÉLÉCHARGEMENT PLANNING PAR MACHINE ─────────────────
+// ✅ CORRECTION : filtre par t.loc (localisation) au lieu de t.comp
 function downloadMachinePlanning(machineName) {
-  const machineTasks = tasks.filter(t => t.comp === machineName);
+  const machineTasks = tasks.filter(t => t.loc === machineName);
   if (!machineTasks.length) { toast('Aucune tâche pour cette machine', 'err'); return; }
 
   if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
@@ -432,7 +431,6 @@ function downloadMachinePlanning(machineName) {
     sLabel(getStatus(t))
   ]);
   const wsTasks = XLSX.utils.aoa_to_sheet([header, ...rows]);
-  // Largeurs colonnes
   wsTasks['!cols'] = [20,12,10,25,10,14,18,14,18,10,30,12].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, wsTasks, 'Tâches');
 
@@ -466,13 +464,14 @@ function downloadMachinePlanning(machineName) {
   toast(`📊 Planning "${machineName}" téléchargé`);
 }
 
+// ✅ CORRECTION : filtre par t.loc (localisation) au lieu de t.comp
 function downloadAllPlannings() {
   if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
   const wb = XLSX.utils.book_new();
 
-  // Une feuille par machine
+  // Une feuille par localisation/machine
   getMachineList().forEach(machineName => {
-    const machineTasks = tasks.filter(t => t.comp === machineName);
+    const machineTasks = tasks.filter(t => t.loc === machineName);
     const calHeader = ['Composant', 'Type', 'Produit', 'Fréquence', 'Technicien', ...MONTHS_F, 'Statut'];
     const calRows = machineTasks.map(t => {
       const row = [t.comp, t.type, t.prod, t.freq, getTechName(t.techId)];
@@ -643,7 +642,7 @@ function exportXLSX() {
   ws['!cols'] = [5,25,12,10,25,10,14,18,12,20,10,30,10,20].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, ws, 'Tâches');
 
-  // Feuille 2 : Planning annuel (toutes machines, mois en colonnes)
+  // Feuille 2 : Planning annuel
   const planHeader = ['Machine','Type','Produit','Fréquence','Technicien',...MONTHS_F];
   const planRows = tasks.map(t => {
     const row = [t.comp, t.type, t.prod, t.freq, getTechName(t.techId)];
