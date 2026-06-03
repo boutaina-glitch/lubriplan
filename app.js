@@ -4,6 +4,8 @@
 // ✅ Export Excel coloré par semaines
 // ✅ Historique restructuré en tableau
 // ✅ localStorage : toutes les modifications sauvegardées
+// ✅ FIX: Recherche activée + filtres combinés (machine + type + criticité...)
+// ✅ FIX: Historique affiche la date exacte du cochage (pas undefined)
 
 const LS_TASKS = 'lubriplan_tasks';
 const LS_USERS = 'lubriplan_users';
@@ -19,6 +21,19 @@ let calYear = new Date().getFullYear();
 let cfCb = null, currentView = 'liste';
 let calFilterMachine = '';
 let calViewType = 'graisse'; // 'graisse' ou 'vidange'
+
+// ── ÉTAT DES FILTRES (persistant entre renders) ──────────
+// On stocke les valeurs des filtres dans un objet pour ne pas
+// les perdre lors du re-render (getElementById peut retourner null
+// si le DOM vient d'être reconstruit).
+let filterState = {
+  fltCrit: '',
+  fltType: '',
+  fltTech: '',
+  fltStat: '',
+  fltMach: '',
+  srch: ''
+};
 
 // ── DONNÉES PAR DÉFAUT ──────────────────────────────────
 function defaultUsers() {
@@ -132,6 +147,7 @@ function doLogin() {
 }
 function doLogout() {
   currentUser = null;
+  filterState = { fltCrit:'', fltType:'', fltTech:'', fltStat:'', fltMach:'', srch:'' };
   document.getElementById('app').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('loginUser').value = ''; document.getElementById('loginPwd').value = '';
@@ -142,6 +158,8 @@ const isAdmin = () => currentUser && currentUser.role === 'admin';
 // ── NAVIGATION ───────────────────────────────────────────
 function switchView(v) {
   currentView = v; closeDp();
+  // Réinitialiser les filtres lors du changement de vue
+  filterState = { fltCrit:'', fltType:'', fltTech:'', fltStat:'', fltMach:'', srch:'' };
   ['liste','planning','techniciens','historique','utilisateurs'].forEach(id => {
     const el = document.getElementById('nav_'+id);
     if (el) el.classList.toggle('active', id === v);
@@ -161,11 +179,73 @@ function render() {
   else if (currentView === 'techniciens')  c.innerHTML = buildTechView();
   else if (currentView === 'historique')   c.innerHTML = buildHistView();
   else if (currentView === 'utilisateurs') c.innerHTML = buildUserView();
+
+  // Après reconstruction du DOM, restaurer les valeurs des filtres
+  if (currentView === 'liste') restoreFilterState();
+}
+
+// ── RESTAURATION DES FILTRES APRÈS RE-RENDER ────────────
+// Le DOM est reconstruit à chaque render() via innerHTML.
+// On relit filterState pour remettre les valeurs dans les selects/input.
+function restoreFilterState() {
+  const ids = ['fltCrit','fltType','fltTech','fltStat','fltMach','srch'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.tagName === 'SELECT') el.value = filterState[id] || '';
+    else el.value = filterState[id] || '';
+  });
+}
+
+// ── LECTURE DES FILTRES ET SAUVEGARDE DANS filterState ──
+// À appeler avant chaque accès aux valeurs des filtres.
+function syncFilterState() {
+  const ids = ['fltCrit','fltType','fltTech','fltStat','fltMach','srch'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) filterState[id] = el.value;
+  });
+}
+
+// ── CALLBACK UNIFIÉ pour tous les changements de filtre ──
+function onFilterChange() {
+  syncFilterState();
+  render();
 }
 
 // ── HELPERS ──────────────────────────────────────────────
-function fmtD(d)  { if (!d) return '—'; const p = d.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; }
-function today()  { return new Date().toISOString().split('T')[0]; }
+function fmtD(d) {
+  // FIX: Gestion robuste des dates — évite "undefined" dans l'historique
+  if (!d || d === 'undefined' || d === 'null') return '—';
+  const s = String(d).trim();
+  // Format ISO yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const p = s.split('-');
+    return `${p[2]}/${p[1]}/${p[0]}`;
+  }
+  // Format déjà dd/mm/yyyy
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+  // Timestamp numérique
+  if (!isNaN(Number(s))) {
+    const dt = new Date(Number(s));
+    if (!isNaN(dt)) {
+      const dd = String(dt.getDate()).padStart(2,'0');
+      const mm = String(dt.getMonth()+1).padStart(2,'0');
+      return `${dd}/${mm}/${dt.getFullYear()}`;
+    }
+  }
+  return '—';
+}
+
+// FIX: today() retourne toujours une date ISO valide (yyyy-mm-dd)
+function today() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm   = String(d.getMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function esc(s)   { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function initials(n) { return String(n||'').split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2); }
 function getTechName(id) { const u = users.find(x => x.id === id); return u ? u.name : '—'; }
@@ -194,24 +274,40 @@ function getStats() {
   return { total, done, late, soon, crit1, pct: total ? Math.round(done/total*100) : 0 };
 }
 
+// ── FIX: getFiltered() lit depuis filterState (pas getElementById) ──
+// Permet la combinaison de plusieurs filtres simultanément
+// et fonctionne correctement même après un re-render.
 function getFiltered() {
-  const fc  = document.getElementById('fltCrit')?.value || '';
-  const ft  = document.getElementById('fltType')?.value || '';
-  const fth = document.getElementById('fltTech')?.value || '';
-  const fs  = document.getElementById('fltStat')?.value || '';
-  const fm  = document.getElementById('fltMach')?.value || '';
-  const q   = (document.getElementById('srch')?.value || '').toLowerCase().trim();
-  let list  = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
+  // Synchroniser depuis le DOM si les éléments existent encore
+  syncFilterState();
+
+  const fc  = filterState.fltCrit  || '';
+  const ft  = filterState.fltType  || '';
+  const fth = filterState.fltTech  || '';
+  const fs  = filterState.fltStat  || '';
+  const fm  = filterState.fltMach  || '';
+  const q   = (filterState.srch    || '').toLowerCase().trim();
+
+  let list = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
+
   return list.filter(t => {
     const s = getStatus(t);
+    // Filtre machine/localisation
     if (fm && t.loc !== fm) return false;
-    if (fc && t.crit != fc) return false;
+    // Filtre criticité
+    if (fc && String(t.crit) !== String(fc)) return false;
+    // Filtre type (Huile / Graisse)
     if (ft && t.type !== ft) return false;
-    if (fth && t.techId != fth) return false;
+    // Filtre technicien
+    if (fth && String(t.techId) !== String(fth)) return false;
+    // Filtre statut
     if (fs && s !== fs) return false;
+    // Recherche textuelle (multi-champs)
     if (q) {
-      const searchFields = [t.comp, t.prod, t.loc, t.note, t.freq, t.qty, t.type,
-        getTechName(t.techId), cLabel(t.crit), sLabel(getStatus(t)), fmtD(t.date)].map(x => (x||'').toLowerCase());
+      const searchFields = [
+        t.comp, t.prod, t.loc, t.note, t.freq, t.qty, t.type,
+        getTechName(t.techId), cLabel(t.crit), sLabel(getStatus(t)), fmtD(t.date)
+      ].map(x => (x||'').toLowerCase());
       if (!searchFields.some(f => f.includes(q))) return false;
     }
     return true;
@@ -223,12 +319,20 @@ function getFiltered() {
   });
 }
 
-function srt(col) { if (sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sortAsc=true; } render(); }
+function srt(col) {
+  syncFilterState();
+  if (sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sortAsc=true; }
+  render();
+}
 
 // ── LIST VIEW ────────────────────────────────────────────
 function buildListView() {
   const s=getStats(), all=getFiltered(), techs=users.filter(u=>u.role==='tech'&&u.active);
   const machines=getMachineList();
+
+  // Compte les filtres actifs pour le badge
+  const activeFilters = [filterState.fltCrit, filterState.fltType, filterState.fltTech,
+    filterState.fltStat, filterState.fltMach, filterState.srch].filter(Boolean).length;
 
   const statsHTML=`<div class="stats-grid">
     <div class="stat-card sc-blue"><div class="stat-label">Total tâches</div><div class="stat-value">${s.total}</div><div class="stat-sub">${s.pct}% complété</div><div class="prog-bar"><div class="prog-fill" style="width:${s.pct}%"></div></div></div>
@@ -248,23 +352,64 @@ function buildListView() {
     <button class="btn btn-p" onclick="openTaskModal()">+ Nouvelle tâche</button>
   </div>`:'';
 
-  const techFilter=isAdmin()?`<select id="fltTech" onchange="render()"><option value="">Tous techniciens</option>${techs.map(u=>`<option value="${u.id}">${u.name}</option>`).join('')}</select>`:'';
-  const machineFilter=`<select id="fltMach" onchange="render()" style="max-width:200px"><option value="">Toutes machines</option>${machines.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>`;
+  const techFilter=isAdmin()?`<select id="fltTech" onchange="onFilterChange()">
+    <option value="">Tous techniciens</option>
+    ${techs.map(u=>`<option value="${u.id}"${String(filterState.fltTech)===String(u.id)?' selected':''}>${u.name}</option>`).join('')}
+  </select>`:'';
+
+  const machineFilter=`<select id="fltMach" onchange="onFilterChange()" style="max-width:200px">
+    <option value="">Toutes machines</option>
+    ${machines.map(m=>`<option value="${esc(m)}"${filterState.fltMach===m?' selected':''}>${esc(m)}</option>`).join('')}
+  </select>`;
+
+  // FIX: Indicateur visuel du nombre de filtres actifs
+  const filterBadge = activeFilters > 0
+    ? `<span style="display:inline-flex;align-items:center;justify-content:center;background:var(--accent,#3182CE);color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;margin-left:4px">${activeFilters}</span>`
+    : '';
+  const resetBtn = activeFilters > 0
+    ? `<button class="btn btn-s btn-sm" onclick="clearAllFilters()" style="color:var(--red);border-color:var(--red)" title="Effacer tous les filtres">✕ Filtres${filterBadge}</button>`
+    : '';
 
   const ctrlHTML=`<div class="ctrl-bar">
-    <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" id="srch" placeholder="Rechercher..." oninput="render()"/></div>
+    <div class="search-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="srch" placeholder="Rechercher composant, type, technicien…"
+        value="${esc(filterState.srch)}"
+        oninput="onFilterChange()"/>
+    </div>
     ${machineFilter}
-    <select id="fltCrit" onchange="render()"><option value="">Toutes criticités</option><option value="1">🔴 Critique</option><option value="2">🟠 Haute</option><option value="3">🟡 Moyenne</option><option value="4">🟢 Faible</option></select>
-    <select id="fltType" onchange="render()"><option value="">Tous types</option><option value="Huile">Huile</option><option value="Graisse">Graisse</option></select>
+    <select id="fltCrit" onchange="onFilterChange()">
+      <option value="">Toutes criticités</option>
+      <option value="1"${filterState.fltCrit==='1'?' selected':''}>🔴 Critique</option>
+      <option value="2"${filterState.fltCrit==='2'?' selected':''}>🟠 Haute</option>
+      <option value="3"${filterState.fltCrit==='3'?' selected':''}>🟡 Moyenne</option>
+      <option value="4"${filterState.fltCrit==='4'?' selected':''}>🟢 Faible</option>
+    </select>
+    <select id="fltType" onchange="onFilterChange()">
+      <option value="">Tous types</option>
+      <option value="Huile"${filterState.fltType==='Huile'?' selected':''}>Huile</option>
+      <option value="Graisse"${filterState.fltType==='Graisse'?' selected':''}>Graisse</option>
+    </select>
     ${techFilter}
-    <select id="fltStat" onchange="render()"><option value="">Tous statuts</option><option value="late">En retard</option><option value="soon">Bientôt</option><option value="pending">Planifié</option><option value="done">Effectué</option></select>
+    <select id="fltStat" onchange="onFilterChange()">
+      <option value="">Tous statuts</option>
+      <option value="late"${filterState.fltStat==='late'?' selected':''}>En retard</option>
+      <option value="soon"${filterState.fltStat==='soon'?' selected':''}>Bientôt</option>
+      <option value="pending"${filterState.fltStat==='pending'?' selected':''}>Planifié</option>
+      <option value="done"${filterState.fltStat==='done'?' selected':''}>Effectué</option>
+    </select>
+    ${resetBtn}
     ${adminBtns}
   </div>`;
 
+  // Résumé des filtres actifs
+  const filterSummary = buildFilterSummary();
+
   const th=(k,l)=>`<th class="${sortCol===k?'sorted':''}" onclick="srt('${k}')">${l}${sortCol===k?' '+(sortAsc?'↑':'↓'):''}</th>`;
   const theadHTML=`${th('comp','Composant')} ${th('crit','Criticité')} ${th('type','Type')} ${th('prod','Produit')} ${th('freq','Fréquence')} ${isAdmin()?th('techId','Technicien'):''} ${th('date','Échéance')} <th>Statut</th> <th style="text-align:center">Fait</th> ${isAdmin()?'<th></th>':''}`;
+
   const rows=all.length?all.map(t=>{
-    const si=tasks.indexOf(t), s=getStatus(t), canCheck=isAdmin()||t.techId===currentUser.id;
+    const si=tasks.indexOf(t), st=getStatus(t), canCheck=isAdmin()||t.techId===currentUser.id;
     return`<tr style="cursor:pointer" onclick="openDp(${si})">
       <td onclick="event.stopPropagation()"><div class="comp-name">${esc(t.comp)}</div>${t.loc?`<div class="comp-loc">📍 ${esc(t.loc)}</div>`:''}</td>
       <td><span class="badge ${cClass(t.crit)}">${t.crit} — ${cLabel(t.crit)}</span></td>
@@ -273,12 +418,39 @@ function buildListView() {
       <td style="font-size:12px">${t.freq}</td>
       ${isAdmin()?`<td style="font-size:12px">${esc(getTechName(t.techId))}</td>`:''}
       <td style="font-size:12px;font-family:var(--mono)">${fmtD(t.date)}</td>
-      <td><span class="badge ${sClass(s)}">${sLabel(s)}</span></td>
+      <td><span class="badge ${sClass(st)}">${sLabel(st)}</span></td>
       <td class="chk-wrap" onclick="event.stopPropagation()"><input type="checkbox" ${t.done?'checked':''} ${canCheck?'':'disabled'} onchange="toggleDone(${si},this)"/></td>
       ${isAdmin()?`<td onclick="event.stopPropagation()"><div style="display:flex;gap:4px"><button class="btn-icon" onclick="openTaskModal(${si})">✏</button><button class="btn-icon" onclick="delTask(${si})" style="color:var(--red)">🗑</button></div></td>`:''}
     </tr>`;
-  }).join(''):`<tr><td colspan="10"><div class="empty"><div class="empty-icon">🔍</div><p>Aucune tâche trouvée</p></div></td></tr>`;
-  return statsHTML+ctrlHTML+`<div class="tbl-wrap"><table><thead><tr>${theadHTML}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }).join(''):`<tr><td colspan="10"><div class="empty"><div class="empty-icon">🔍</div><p>Aucune tâche trouvée${activeFilters>0?' — <a href="#" onclick="clearAllFilters();return false;" style="color:var(--accent)">Effacer les filtres</a>':''}</p></div></td></tr>`;
+
+  return statsHTML + ctrlHTML + filterSummary + `<div class="tbl-wrap"><table><thead><tr>${theadHTML}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+// ── RÉSUMÉ DES FILTRES ACTIFS ────────────────────────────
+function buildFilterSummary() {
+  const parts = [];
+  if (filterState.fltMach)  parts.push(`Machine : <strong>${esc(filterState.fltMach)}</strong>`);
+  if (filterState.fltCrit)  parts.push(`Criticité : <strong>${cLabel(+filterState.fltCrit)}</strong>`);
+  if (filterState.fltType)  parts.push(`Type : <strong>${esc(filterState.fltType)}</strong>`);
+  if (filterState.fltTech) {
+    const u = users.find(x => String(x.id) === String(filterState.fltTech));
+    if (u) parts.push(`Technicien : <strong>${esc(u.name)}</strong>`);
+  }
+  if (filterState.fltStat)  parts.push(`Statut : <strong>${sLabel(filterState.fltStat)}</strong>`);
+  if (filterState.srch)     parts.push(`Recherche : <strong>"${esc(filterState.srch)}"</strong>`);
+  if (!parts.length) return '';
+  return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:#EBF8FF;border:1px solid #BEE3F8;border-radius:6px;margin-bottom:10px;font-size:12px;color:#2C5282">
+    <span style="font-weight:600">🔎 Filtres actifs :</span>
+    ${parts.join('<span style="color:#90CDF4;margin:0 2px">·</span>')}
+    <button onclick="clearAllFilters()" style="margin-left:auto;background:none;border:1px solid #3182CE;color:#3182CE;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px">✕ Tout effacer</button>
+  </div>`;
+}
+
+// ── EFFACER TOUS LES FILTRES ─────────────────────────────
+function clearAllFilters() {
+  filterState = { fltCrit:'', fltType:'', fltTech:'', fltStat:'', fltMach:'', srch:'' };
+  render();
 }
 
 // ── CALCUL NUMÉRO DE SEMAINE ISO ────────────────────────
@@ -289,44 +461,14 @@ function getWeekNumber(date) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
-// Retourne la liste des semaines actives pour une tâche dans une année donnée
-function getActiveWeeks(t, yr) {
-  if (!t.date) return [];
-  const base = new Date(t.date);
-  if (isNaN(base)) return [];
-  const iv = FREQ_M[t.freq] || 12;
-  const weeks = new Set();
-  for (let off = 0; off < 300; off++) {
-    const d = new Date(base);
-    d.setMonth(d.getMonth() + Math.floor(off * iv));
-    // Pour hebdomadaire (iv=0.25 => ~7j), on décale par semaines
-    if (t.freq === 'Hebdomadaire') {
-      const dw = new Date(base);
-      dw.setDate(dw.getDate() + off * 7);
-      if (dw.getFullYear() > yr) break;
-      if (dw.getFullYear() === yr) weeks.add(getWeekNumber(dw));
-      if (dw.getFullYear() < yr) continue;
-    } else {
-      const dm = new Date(base);
-      dm.setMonth(dm.getMonth() + off * Math.round(iv));
-      if (dm.getFullYear() > yr) break;
-      if (dm.getFullYear() === yr) weeks.add(getWeekNumber(dm));
-    }
-    if (off > 200) break;
-  }
-  return [...weeks];
-}
-
 // Recalcul propre des semaines actives
 function getActiveWeeksClean(t, yr) {
   if (!t.date) return new Set();
   const base = new Date(t.date + 'T00:00:00');
   if (isNaN(base)) return new Set();
   const weeks = new Set();
-  const totalWeeks = 52;
 
   if (t.freq === 'Hebdomadaire') {
-    // Toutes les semaines à partir de la date de base
     let cur = new Date(base);
     while (cur.getFullYear() <= yr) {
       if (cur.getFullYear() === yr) weeks.add(getWeekNumber(cur));
@@ -351,7 +493,6 @@ function buildCalView() {
   const TOTAL_WEEKS = 52;
   const weeks = Array.from({length: TOTAL_WEEKS}, (_, i) => i + 1);
 
-  // Onglets Graissage / Vidange
   const tabsHTML = `
     <div class="cal-tabs">
       <button class="cal-tab ${calViewType==='graisse'?'cal-tab-active':''}" onclick="calViewType='graisse';render()">🟡 Planning Graissage</button>
@@ -395,7 +536,6 @@ function buildCalView() {
     ? tasks.filter(t => t.loc === calFilterMachine)
     : (isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id));
 
-  // Filtrer par type
   displayTasks = displayTasks.filter(t => isGraisse ? t.type === 'Graisse' : t.type === 'Huile');
 
   if (!displayTasks.length) {
@@ -405,15 +545,12 @@ function buildCalView() {
   const now = new Date();
   const currentWeek = getWeekNumber(now);
 
-  // Grouper par machine (comp)
   const byMachine = {};
   displayTasks.forEach(t => {
     if (!byMachine[t.comp]) byMachine[t.comp] = [];
     byMachine[t.comp].push(t);
   });
 
-  // Construire le header semaines : groupés par mois
-  // Calculer à quelle semaine ISO correspond chaque mois de l'année
   const monthWeekRanges = [];
   for (let mo = 0; mo < 12; mo++) {
     const firstDay = new Date(calYear, mo, 1);
@@ -423,19 +560,16 @@ function buildCalView() {
     monthWeekRanges.push({ mo, wStart, wEnd, label: MONTHS_S[mo] });
   }
 
-  // Ligne mois (groupe de colonnes)
   const monthHeaderCells = monthWeekRanges.map(m => {
     const span = Math.max(1, m.wEnd - m.wStart + 1);
     return `<th colspan="${span}" style="background:#1a365d;color:#fff;text-align:center;font-size:11px;font-weight:700;border:1px solid #2d4a7a;padding:4px 2px;letter-spacing:0.5px">${m.label}</th>`;
   }).join('');
 
-  // Ligne numéros de semaine
   const weekHeaderCells = weeks.map(w => {
     const isCur = w === currentWeek && calYear === now.getFullYear();
     return `<th style="background:${isCur?'#E53E3E':'#2d4a7a'};color:#fff;text-align:center;font-size:10px;font-weight:600;border:1px solid #1a365d;min-width:22px;width:22px;padding:3px 1px">S${w}</th>`;
   }).join('');
 
-  // Lignes de données
   let rowsHTML = '';
   const machineNames = Object.keys(byMachine).sort();
 
@@ -447,7 +581,6 @@ function buildCalView() {
     machineTasks.forEach((t, tIdx) => {
       const si = tasks.indexOf(t);
       const activeWeeks = getActiveWeeksClean(t, calYear);
-      const canCheck = isAdmin() || t.techId === currentUser.id;
 
       const weekCells = weeks.map(w => {
         if (!activeWeeks.has(w)) return `<td style="border:1px solid #e2e8f0;background:${rowBg}"></td>`;
@@ -520,22 +653,23 @@ function calClickWeek(si, week) {
   if (!canCheck) { toast('Vous ne pouvez cocher que vos propres tâches','err'); return; }
   showCf('Confirmer intervention',
     `Marquer <strong>${esc(t.comp)}</strong> (S${week}) comme effectué ?`,
-    () => { tasks[si].done=true; tasks[si].hist.push(today()); saveTasks(); toast('Tâche marquée effectuée'); render(); }
+    () => {
+      tasks[si].done = true;
+      // FIX: Enregistrer la date exacte du cochage (pas une date aléatoire)
+      tasks[si].hist.push(today());
+      saveTasks(); toast('Tâche marquée effectuée'); render();
+    }
   );
 }
 
-// Compatibilité ancien code
-function isInMonth(t,mo,yr) {
-  if(!t.date)return false; const base=new Date(t.date); if(isNaN(base))return false;
-  const iv=FREQ_M[t.freq]||12;
-  for(let off=0;off<120;off++){const d=new Date(base);d.setMonth(d.getMonth()+off*iv);if(d.getFullYear()===yr&&d.getMonth()===mo)return true;if(d.getFullYear()>yr)break;}
-  return false;
-}
 function calClick(si) {
   const t=tasks[si], canCheck=isAdmin()||t.techId===currentUser.id;
   if(!canCheck){toast('Vous ne pouvez cocher que vos propres tâches','err');return;}
   showCf('Confirmer intervention',`Marquer <strong>${esc(t.comp)}</strong> comme effectué ?`,()=>{
-    tasks[si].done=true; tasks[si].hist.push(today()); saveTasks(); toast('Tâche marquée effectuée'); render();
+    tasks[si].done=true;
+    // FIX: Date exacte du cochage
+    tasks[si].hist.push(today());
+    saveTasks(); toast('Tâche marquée effectuée'); render();
   });
 }
 
@@ -551,7 +685,6 @@ function downloadMachinePlanning(machineName) {
   const now = new Date();
   const currentWeek = getWeekNumber(now);
 
-  // ── Feuille 1 : Infos ──
   const wsInfo = XLSX.utils.aoa_to_sheet([
     ['PLANNING DE GRAISSAGE & VIDANGE',''],
     ['Machine :', machineName],
@@ -561,26 +694,26 @@ function downloadMachinePlanning(machineName) {
   ]);
   XLSX.utils.book_append_sheet(wb, wsInfo, 'Infos');
 
-  // ── Feuille 2 : Planning Graissage ──
   buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Graisse'), weeks, calYear, currentWeek, `Graissage ${calYear}`, 'G',
     { planned:'FFFF00', done:'92D050', late:'FF0000', header:'1A365D', headerFont:'FFFFFF' }
   );
 
-  // ── Feuille 3 : Planning Vidange ──
   buildWeeklySheet(wb, machineTasks.filter(t => t.type === 'Huile'), weeks, calYear, currentWeek, `Vidange ${calYear}`, 'V',
     { planned:'FF0000', done:'00B0F0', late:'FF6600', header:'1A365D', headerFont:'FFFFFF' }
   );
 
-  // ── Feuille 4 : Historique ──
   const histHeader = ['Date','Équipement','Type','Produit','Technicien','Statut'];
   const histRows = [];
   machineTasks.forEach(t => {
-    (t.hist||[]).forEach(d => histRows.push([fmtD(d), t.comp, t.type, t.prod||'—', getTechName(t.techId), 'Effectué']));
+    (t.hist||[]).forEach(d => {
+      // FIX: Ne pas afficher "—" si la date est valide
+      const dateStr = fmtD(d);
+      histRows.push([dateStr !== '—' ? dateStr : 'Date inconnue', t.comp, t.type, t.prod||'—', getTechName(t.techId), 'Effectué']);
+    });
   });
   if (!histRows.length) histRows.push(['Aucune intervention enregistrée','','','','','']);
   const wsHist = XLSX.utils.aoa_to_sheet([histHeader, ...histRows]);
   wsHist['!cols'] = [{wch:14},{wch:25},{wch:10},{wch:28},{wch:18},{wch:12}];
-  // Style header historique
   styleHeaderRow(wsHist, histHeader.length, '1A365D', 'FFFFFF');
   XLSX.utils.book_append_sheet(wb, wsHist, 'Historique');
 
@@ -591,9 +724,7 @@ function downloadMachinePlanning(machineName) {
 
 function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, letter, colors) {
   const aoa = [];
-  const cellStyles = {}; // ref => style
 
-  // Ligne 1 : Mois (groupés)
   const monthRow = ['ÉQUIPEMENT', 'LUBRIFIANT', 'FRÉQUENCE'];
   const now = new Date();
   const monthWeekMap = {};
@@ -601,23 +732,20 @@ function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, lette
     const firstDay = new Date(yr, mo, 1);
     const lastDay  = new Date(yr, mo + 1, 0);
     let wS = getWeekNumber(firstDay), wE = getWeekNumber(lastDay);
-    if (wS > wE) wE = wS; // Sécurité
+    if (wS > wE) wE = wS;
     for (let w = wS; w <= wE && w <= 52; w++) {
       if (!monthWeekMap[w]) monthWeekMap[w] = mo;
     }
   }
-  // Colonnes mois (3 premières fixes + semaines)
   weeks.forEach(w => {
     const mo = monthWeekMap[w] !== undefined ? monthWeekMap[w] : -1;
     monthRow.push(mo >= 0 ? MONTHS_S[mo] : '');
   });
   aoa.push(monthRow);
 
-  // Ligne 2 : S1...S52
   const weekRow = ['ÉQUIPEMENT', 'LUBRIFIANT', 'FRÉQUENCE', ...weeks.map(w => `S${w}`)];
   aoa.push(weekRow);
 
-  // Lignes de données
   const byMachine = {};
   taskList.forEach(t => { if (!byMachine[t.comp]) byMachine[t.comp] = []; byMachine[t.comp].push(t); });
 
@@ -635,8 +763,6 @@ function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, lette
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // Appliquer les couleurs cellule par cellule
-  const dataStartRow = 2; // 0-indexed, ligne données = index 2+
   aoa.forEach((rowData, ri) => {
     rowData.forEach((cell, ci) => {
       const ref = XLSX.utils.encode_cell({r: ri, c: ci});
@@ -645,11 +771,8 @@ function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, lette
       let fgColor = null, fontColor = 'FF000000', bold = false;
 
       if (ri === 0) {
-        // Ligne mois
         fgColor = colors.header; fontColor = colors.headerFont; bold = true;
       } else if (ri === 1) {
-        // Ligne semaines
-        const w = ci - 2; // offset 3 colonnes fixes
         if (ci < 3) { fgColor = colors.header; fontColor = colors.headerFont; bold = true; }
         else {
           const weekNum = ci - 2;
@@ -661,7 +784,6 @@ function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, lette
         else if (ci === 1 || ci === 2) { fgColor = 'F7FAFC'; }
         else if (cell === letter) {
           const weekNum = ci - 2;
-          const rowTask = null; // On ne peut pas facilement relier ici, on utilise la couleur planifiée
           const isPast = weekNum < currentWeek && yr === now.getFullYear();
           const isCur  = weekNum === currentWeek && yr === now.getFullYear();
           fgColor = isCur ? 'E53E3E' : isPast ? colors.late : colors.planned;
@@ -686,13 +808,10 @@ function buildWeeklySheet(wb, taskList, weeks, yr, currentWeek, sheetName, lette
     });
   });
 
-  // Largeurs colonnes
   ws['!cols'] = [
     {wch:22}, {wch:28}, {wch:14},
     ...Array(52).fill({wch:4})
   ];
-
-  // Hauteurs lignes
   ws['!rows'] = [{hpt:18},{hpt:16},...Array(aoa.length-2).fill({hpt:15})];
 
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
@@ -732,7 +851,6 @@ function downloadAllPlannings() {
     );
   });
 
-  // Récapitulatif
   const recapHeader = ['Machine','Localisation','Criticité','Type','Produit','Fréquence','Technicien','Prochaine échéance','Statut'];
   const recapRows = tasks.map(t => [t.comp, t.loc||'', cLabel(t.crit), t.type, t.prod, t.freq, getTechName(t.techId), fmtD(t.date), sLabel(getStatus(t))]);
   const wsRecap = XLSX.utils.aoa_to_sheet([recapHeader, ...recapRows]);
@@ -760,19 +878,32 @@ function buildTechView() {
   return`<div class="tech-grid">${cards}</div>`;
 }
 
-// ── HISTORY VIEW (RESTRUCTURÉ EN TABLEAU) ───────────────
+// ── HISTORY VIEW ─────────────────────────────────────────
 function buildHistView() {
   const list = isAdmin() ? tasks : tasks.filter(t => t.techId === currentUser.id);
   const all = [];
-  list.forEach(t => (t.hist||[]).forEach(d => all.push({d, t})));
+  list.forEach(t => {
+    (t.hist||[]).forEach(d => {
+      // FIX: Ignorer les entrées vides/invalides dans l'historique
+      if (d && d !== 'undefined' && d !== 'null' && String(d).trim() !== '') {
+        all.push({d: String(d).trim(), t});
+      }
+    });
+  });
   all.sort((a,b) => new Date(b.d) - new Date(a.d));
 
   if (!all.length) return `<div class="empty"><div class="empty-icon">🕐</div><p>Aucune intervention enregistrée</p></div>`;
 
-  // Stats rapides
   const totalInterv = all.length;
-  const thisMonth = all.filter(({d}) => { const dt = new Date(d); return dt.getMonth() === new Date().getMonth() && dt.getFullYear() === new Date().getFullYear(); }).length;
-  const byType = { Huile: all.filter(({t}) => t.type==='Huile').length, Graisse: all.filter(({t}) => t.type==='Graisse').length };
+  const thisMonth = all.filter(({d}) => {
+    const dt = new Date(d);
+    if (isNaN(dt)) return false;
+    return dt.getMonth() === new Date().getMonth() && dt.getFullYear() === new Date().getFullYear();
+  }).length;
+  const byType = {
+    Huile:   all.filter(({t}) => t.type==='Huile').length,
+    Graisse: all.filter(({t}) => t.type==='Graisse').length
+  };
 
   const statsBar = `
     <div class="hist-stats-bar">
@@ -797,17 +928,18 @@ function buildHistView() {
       </div>
     </div>`;
 
-  // Tableau structuré
   const tableRows = all.map(({d, t}, idx) => {
     const rowBg = idx % 2 === 0 ? '#f8fafc' : '#fff';
     const typeColor = t.type === 'Huile' ? '#3182CE' : '#D69E2E';
     const typeBg    = t.type === 'Huile' ? '#EBF8FF' : '#FFFFF0';
     const critColor = ({1:'#E53E3E',2:'#DD6B20',3:'#D69E2E',4:'#38A169'})[t.crit] || '#718096';
+    // FIX: fmtD gère maintenant tous les formats et ne retourne plus "undefined"
+    const dateDisplay = fmtD(d);
     return `<tr style="background:${rowBg};border-bottom:1px solid #e2e8f0">
       <td style="padding:10px 14px;font-size:12px;font-family:var(--mono);font-weight:600;color:#2d3748;white-space:nowrap;border-right:1px solid #e2e8f0">
         <div style="display:flex;align-items:center;gap:6px">
           <div style="width:8px;height:8px;border-radius:50%;background:#38A169;flex-shrink:0"></div>
-          ${fmtD(d)}
+          ${dateDisplay}
         </div>
       </td>
       <td style="padding:10px 14px;border-right:1px solid #e2e8f0">
@@ -865,7 +997,11 @@ function openDp(si) {
   document.getElementById('dp-t').textContent=t.comp;
   document.getElementById('dp-s').innerHTML=`<span class="badge ${cClass(t.crit)}">${t.crit} — ${cLabel(t.crit)}</span> &nbsp; <span class="badge ${sClass(s)}">${sLabel(s)}</span>`;
   const info=[['Type',`<span class="badge ${tClass(t.type)}">${t.type}</span>`],['Référence',esc(t.prod)],['Quantité',esc(t.qty||'—')],['Fréquence',t.freq],['Technicien',esc(getTechName(t.techId))],['Échéance',fmtD(t.date)],['Durée',esc(t.dur||'—')],['Localisation',esc(t.loc||'—')]];
-  const histH=(t.hist||[]).length?(t.hist||[]).map(d=>`<div class="hist-entry">✓ Effectué le ${fmtD(d)}</div>`).join(''):'<div style="font-size:12px;color:var(--text3)">Aucune intervention</div>';
+  // FIX: Affichage de l'historique avec dates correctes
+  const histH=(t.hist||[]).filter(d=>d&&d!=='undefined'&&d!=='null'&&String(d).trim()!=='').length
+    ? (t.hist||[]).filter(d=>d&&d!=='undefined'&&d!=='null'&&String(d).trim()!=='')
+        .map(d=>`<div class="hist-entry">✓ Effectué le ${fmtD(d)}</div>`).join('')
+    :'<div style="font-size:12px;color:var(--text3)">Aucune intervention</div>';
   document.getElementById('dp-b').innerHTML=`<div class="dp-section"><div class="dp-section-title">Informations</div>${info.map(([k,v])=>`<div class="dp-row"><span class="dp-key">${k}</span><span class="dp-val">${v}</span></div>`).join('')}</div>${t.note?`<div class="dp-section"><div class="dp-section-title">Remarques</div><div style="font-size:13px;color:var(--text2);line-height:1.6">${esc(t.note)}</div></div>`:''}<div class="dp-section"><div class="dp-section-title">Historique</div>${histH}</div>`;
   document.getElementById('dp-f').innerHTML=isAdmin()?`<button class="btn btn-s" style="flex:1" onclick="openTaskModal(${si});closeDp()">✏ Modifier</button><button class="btn btn-d" style="flex:1" onclick="delTask(${si})">🗑 Supprimer</button>`:'';
   document.getElementById('dpOverlay').classList.add('open');
@@ -930,13 +1066,26 @@ function toggleUserActive(i){users[i].active=!users[i].active;saveUsers();toast(
 function delUser(i){showCf('Supprimer',`Supprimer <strong>${esc(users[i].name)}</strong> ?`,()=>{users.splice(i,1);saveUsers();toast('Supprimé','warn');render();});}
 
 // ── ACTIONS ──────────────────────────────────────────────
-function toggleDone(si,el) {
-  const t=tasks[si];
-  if(!isAdmin()&&t.techId!==currentUser.id){el.checked=t.done;toast('Vous ne pouvez cocher que vos tâches','err');return;}
-  t.done=el.checked;
-  if(el.checked){t.hist.push(today());toast('✓ Tâche marquée effectuée');}else toast('Tâche réouverte','warn');
-  saveTasks(); render();
+function toggleDone(si, el) {
+  const t = tasks[si];
+  if (!isAdmin() && t.techId !== currentUser.id) {
+    el.checked = t.done;
+    toast('Vous ne pouvez cocher que vos tâches','err');
+    return;
+  }
+  t.done = el.checked;
+  if (el.checked) {
+    // FIX: Enregistrer la date exacte du jour du cochage (format ISO yyyy-mm-dd)
+    const dateAujourd = today();
+    t.hist.push(dateAujourd);
+    toast(`✓ Tâche marquée effectuée le ${fmtD(dateAujourd)}`);
+  } else {
+    toast('Tâche réouverte','warn');
+  }
+  saveTasks();
+  render();
 }
+
 function delTask(si){closeDp();showCf('Supprimer la tâche',`Supprimer <strong>${esc(tasks[si].comp)}</strong> ?`,()=>{tasks.splice(si,1);saveTasks();toast('Supprimée','warn');render();});}
 function resetDone(){showCf('Nouvelle période','Remettre toutes les tâches en Planifié ?',()=>{tasks.forEach(t=>t.done=false);saveTasks();toast('Période réinitialisée');render();});}
 
@@ -944,7 +1093,7 @@ function resetDone(){showCf('Nouvelle période','Remettre toutes les tâches en 
 function q(s){return'"'+String(s||'').replace(/"/g,'""')+'"';}
 function exportCSV(){
   const h=['ID','Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Localisation','Durée','Remarques','Effectué','Historique'];
-  const rows=tasks.map(t=>[t.id,q(t.comp),t.crit,t.type,q(t.prod),q(t.qty||''),t.freq,q(getTechName(t.techId)),t.date,q(t.loc||''),q(t.dur||''),q(t.note||''),t.done?'Oui':'Non',(t.hist||[]).join(';')]);
+  const rows=tasks.map(t=>[t.id,q(t.comp),t.crit,t.type,q(t.prod),q(t.qty||''),t.freq,q(getTechName(t.techId)),t.date,q(t.loc||''),q(t.dur||''),q(t.note||''),t.done?'Oui':'Non',(t.hist||[]).filter(d=>d&&d!=='undefined').join(';')]);
   const csv=[h,...rows].map(r=>r.join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download=`lubriplan_${today()}.csv`;a.click();toast('Export CSV téléchargé');
@@ -955,7 +1104,13 @@ function exportXLSX() {
   if (typeof XLSX === 'undefined') { toast('Bibliothèque Excel non chargée', 'err'); return; }
   const wb = XLSX.utils.book_new();
   const header = ['ID','Composant','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Localisation','Durée','Remarques','Effectué','Historique'];
-  const rows = tasks.map(t => [t.id, t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'', t.freq, getTechName(t.techId), fmtD(t.date), t.loc||'', t.dur||'', t.note||'', t.done?'Oui':'Non', (t.hist||[]).map(fmtD).join(' | ')]);
+  const rows = tasks.map(t => [
+    t.id, t.comp, cLabel(t.crit), t.type, t.prod, t.qty||'', t.freq,
+    getTechName(t.techId), fmtD(t.date), t.loc||'', t.dur||'', t.note||'',
+    t.done?'Oui':'Non',
+    // FIX: Filtrer les dates invalides dans l'export
+    (t.hist||[]).filter(d=>d&&d!=='undefined'&&d!=='null').map(fmtD).filter(d=>d!=='—').join(' | ')
+  ]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
   ws['!cols'] = [5,25,12,10,25,10,14,18,12,20,10,30,10,20].map(w=>({wch:w}));
   styleHeaderRow(ws, header.length, '1A365D', 'FFFFFF');
@@ -1009,7 +1164,7 @@ function importCSVfile(file) {
     lines.forEach(line=>{
       const cols=line.split(',').map(x=>x.replace(/^"|"$/g,'').replace(/""/g,'"'));
       if(cols.length<9)return;
-      tasks.push({id:nextTaskId(),comp:cols[1],crit:+cols[2]||1,type:cols[3]||'Huile',prod:cols[4],qty:cols[5],freq:cols[6],techId:null,date:cols[8],loc:cols[9]||'',dur:cols[10]||'',note:cols[11]||'',done:cols[12]==='Oui',hist:(cols[13]||'').split(';').filter(Boolean)});
+      tasks.push({id:nextTaskId(),comp:cols[1],crit:+cols[2]||1,type:cols[3]||'Huile',prod:cols[4],qty:cols[5],freq:cols[6],techId:null,date:cols[8],loc:cols[9]||'',dur:cols[10]||'',note:cols[11]||'',done:cols[12]==='Oui',hist:(cols[13]||'').split(';').filter(d=>d&&d!=='undefined')});
       count++;
     });
     saveTasks(); toast(`✓ ${count} tâche(s) importée(s) depuis CSV`); render();
