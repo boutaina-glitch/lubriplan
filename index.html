@@ -1,29 +1,29 @@
+cat > /mnt/user-data/outputs/lubriplan/index.html << 'ENDOFFILE'
 <!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-
-  <!-- ══ SEO GOOGLE ══ -->
   <title>LubriPlan — Gestion Graissage & Vidange Industrielle</title>
-  <meta name="description" content="LubriPlan : logiciel de gestion du graissage et de la vidange industrielle. Planifiez, suivez et gérez vos interventions de maintenance."/>
-  <meta name="keywords" content="lubriplan, graissage industriel, vidange, maintenance, lubrification, planning maintenance"/>
-  <meta name="robots" content="index, follow"/>
-  <meta name="author" content="LubriPlan"/>
-  <meta property="og:title" content="LubriPlan — Gestion Graissage & Vidange"/>
-  <meta property="og:description" content="Logiciel de gestion du graissage et de la vidange industrielle."/>
-  <meta property="og:type" content="website"/>
-  <meta property="og:locale" content="fr_FR"/>
-
+  <meta name="description" content="LubriPlan : logiciel de gestion du graissage et de la vidange industrielle."/>
   <link rel="stylesheet" href="style.css"/>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet"/>
-
   <style>
-    /* LOGIN BLEU */
-    #loginScreen { background: linear-gradient(135deg,#1a3a5c,#0f2540,#1a4a8a) !important; }
-    .login-top   { background: linear-gradient(135deg,#1a4a8a,#0f2540) !important; }
-    .login-btn   { background: #1a4a8a !important; }
-    .login-btn:hover { background: #0f2540 !important; }
+    #loginScreen{background:linear-gradient(135deg,#1a3a5c,#0f2540,#1a4a8a)!important;}
+    .login-top{background:linear-gradient(135deg,#1a4a8a,#0f2540)!important;}
+    .login-btn{background:#1a4a8a!important;}
+    .login-btn:hover{background:#0f2540!important;}
+    /* Styles historique */
+    .hist-stats-bar{display:flex;align-items:center;gap:0;background:#fff;border:1px solid var(--border);border-radius:var(--rl);padding:16px 24px;margin-bottom:16px;}
+    .hist-stat-item{display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;}
+    .hist-stat-val{font-size:28px;font-weight:700;font-family:var(--mono);line-height:1;}
+    .hist-stat-lbl{font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.05em;}
+    .hist-stat-sep{width:1px;height:50px;background:var(--border);flex-shrink:0;}
+    /* Styles planning */
+    .cal-tabs{display:flex;gap:8px;margin-bottom:16px;}
+    .cal-tab{padding:8px 18px;border-radius:var(--r);border:1px solid var(--border2);background:var(--surface);color:var(--text2);font-family:var(--font);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;}
+    .cal-tab-active{background:var(--accent);color:#fff;border-color:var(--accent);}
+    .leg-sq{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:5px;vertical-align:middle;}
   </style>
 </head>
 <body>
@@ -56,10 +56,7 @@
   <aside class="sidebar">
     <div class="sidebar-logo">
       <span class="logo-icon">⚙</span>
-      <div>
-        <div class="logo-title">LubriPlan</div>
-        <div class="logo-sub">Gestion maintenance</div>
-      </div>
+      <div><div class="logo-title">LubriPlan</div><div class="logo-sub">Gestion maintenance</div></div>
     </div>
     <nav class="sidebar-nav">
       <div class="nav-section">SUIVI</div>
@@ -70,10 +67,11 @@
       <div class="nav-item" id="nav_utilisateurs" onclick="switchView('utilisateurs')"><span class="nav-icon">👥</span><span>Utilisateurs</span></div>
       <div class="nav-section">DONNÉES</div>
       <div class="nav-item" onclick="exportCSV()"><span class="nav-icon">📤</span><span>Export CSV</span></div>
+      <div class="nav-item" onclick="exportXLSX()"><span class="nav-icon">📊</span><span>Export Excel</span></div>
       <div class="nav-item" onclick="document.getElementById('fileInput').click()"><span class="nav-icon">📥</span><span>Import Excel/CSV</span></div>
       <div class="nav-item" onclick="window.print()"><span class="nav-icon">🖨</span><span>Imprimer</span></div>
     </nav>
-    <div class="sidebar-footer">v1.0 — 2025</div>
+    <div class="sidebar-footer">v2.0 — 2026</div>
   </aside>
 
   <div class="main">
@@ -101,7 +99,8 @@
     <div class="modal-header"><h2 id="taskModalTitle">Nouvelle tâche</h2><button class="btn-close" onclick="closeTaskModal()">✕</button></div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-row full"><label>Composant / Équipement *</label><input type="text" id="fComp" placeholder="ex: Pompe centrifuge P-101"/></div>
+        <div class="form-row full"><label>Composant / Équipement *</label><input type="text" id="fComp" placeholder="ex: Paliers de roulement"/></div>
+        <div class="form-row"><label>Machine (localisation) *</label><input type="text" id="fLoc" placeholder="ex: FFG 924"/></div>
         <div class="form-row"><label>Criticité *</label><select id="fCrit"><option value="1">1 — Critique</option><option value="2">2 — Haute</option><option value="3">3 — Moyenne</option><option value="4">4 — Faible</option></select></div>
         <div class="form-row"><label>Type de produit *</label><select id="fType" onchange="updProdLbl()"><option value="Huile">Huile de vidange</option><option value="Graisse">Graisse</option></select></div>
         <div class="form-row"><label id="prodLbl">Référence huile *</label><input type="text" id="fProd" placeholder="ex: Shell Omala S2 GX 220"/></div>
@@ -112,7 +111,6 @@
         <div class="form-row"><label>Durée estimée</label><input type="text" id="fDur" placeholder="ex: 30 min"/></div>
         <div class="form-row"><label>Technicien responsable</label><select id="fTech"></select></div>
         <div class="form-section">Informations complémentaires</div>
-        <div class="form-row full"><label>Localisation</label><input type="text" id="fLoc" placeholder="ex: Atelier 2 — Zone B"/></div>
         <div class="form-row full"><label>Remarques</label><textarea id="fNote" placeholder="Instructions particulières..."></textarea></div>
       </div>
     </div>
@@ -129,7 +127,7 @@
         <div class="form-row full"><label>Nom complet *</label><input type="text" id="uName" placeholder="ex: Ahmed Bensalem"/></div>
         <div class="form-row full"><label>Identifiant (login) *</label><input type="text" id="uLogin" placeholder="ex: ahmed.b"/></div>
         <div class="form-row"><label>Rôle *</label><select id="uRole"><option value="admin">Administrateur</option><option value="tech">Technicien</option></select></div>
-        <div class="form-row"><label>Spécialité</label><input type="text" id="uSpec" placeholder="ex: Mécanique"/></div>
+        <div class="form-row"><label>Spécialité</label><input type="text" id="uSpec" placeholder="ex: Graisseur"/></div>
         <div class="form-row full"><label id="pwdLbl">Mot de passe *</label><input type="password" id="uPwd" placeholder="Min. 4 caractères"/></div>
         <div class="form-row full" id="uPwd2Row"><label>Confirmer le mot de passe</label><input type="password" id="uPwd2" placeholder="Retaper le mot de passe"/></div>
       </div>
@@ -159,12 +157,23 @@
 </div>
 
 <div class="toast-container" id="toastC"></div>
-
-<!-- inputs fichiers (2 IDs pour compatibilité) -->
 <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
-<input type="file" id="csvInput"  accept=".csv,.xlsx,.xls" style="display:none" onchange="importFile(event)"/>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- ═══════════════════════════════════════════════════════════
+     BIBLIOTHÈQUE EXCEL AVEC STYLES (xlsx-js-style)
+     OBLIGATOIRE pour les couleurs dans les fichiers Excel
+     xlsx standard NE supporte PAS les styles de cellules
+     ═══════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>
+  // xlsx-js-style expose son API sous le nom "XLSX" global
+  // On s'assure que XLSXStyle pointe bien vers la bonne lib
+  if(typeof XLSX !== 'undefined') {
+    window.XLSXStyle = XLSX;
+  }
+</script>
 <script src="app.js"></script>
 </body>
 </html>
+ENDOFFILE
+echo "OK"
