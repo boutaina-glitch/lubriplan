@@ -4,16 +4,15 @@
 // ✅ Échéance roulante : cocher une date recalcule la prochaine échéance selon la fréquence
 // ✅ Criticité sur 3 niveaux
 // ✅ Synchronisation cloud optionnelle (Supabase) → mêmes données sur tous les navigateurs
-// ✅ FIX : réinitialisation automatique des users si la version change
 
 const LS_TASKS='lubriplan_tasks';
 const LS_USERS='lubriplan_users';
-const APP_VERSION='2.0'; // ← Incrémenter à chaque changement des users par défaut
 const FREQ_M={Hebdomadaire:.25,Mensuelle:1,Bimestrielle:2,Trimestrielle:3,Semestrielle:6,Annuelle:12};
 const MONTHS_S=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
 // ══════════════════════════════════════════════════════════
-// ☁️  SYNCHRONISATION CLOUD (Supabase)
+// ☁️  SYNCHRONISATION CLOUD (Supabase) — pour avoir les MÊMES
+//     données sur tous les navigateurs / appareils.
 //     1) Crée un projet gratuit sur https://supabase.com
 //     2) Dans "SQL Editor", exécute :
 //          create table if not exists lp_kv (k text primary key, v jsonb);
@@ -23,6 +22,8 @@ const MONTHS_S=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','N
 //     4) Colle-les ci-dessous (entre les guillemets)
 //     5) Dans index.html, AVANT <script src="app.js">, ajoute :
 //          <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+//     Tant que ces deux constantes sont vides, l'app continue de
+//     fonctionner normalement avec le stockage local du navigateur.
 // ══════════════════════════════════════════════════════════
 const SB_URL='';   // ex: 'https://xxxx.supabase.co'
 const SB_KEY='';   // ex: 'eyJhbGciOi...' (clé anon public)
@@ -59,7 +60,7 @@ let cfCb=null,currentView='liste';
 let calFilterMachine='';
 let calViewType='graisse';
 let filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};
-let selectedTasks=new Set();
+let selectedTasks=new Set(); // ids des tâches cochées pour suppression groupée
 
 // ── DONNÉES PAR DÉFAUT ──
 function defaultUsers(){
@@ -127,30 +128,12 @@ function defaultTasks(){
 
 // ── SAUVEGARDE ──
 function loadData(){
-  try{
-    const savedVersion=localStorage.getItem('lubriplan_version');
-    const su=localStorage.getItem(LS_USERS);
-    const st=localStorage.getItem(LS_TASKS);
-
-    // Si la version a changé (ou première utilisation), on réinitialise les users
-    if(savedVersion!==APP_VERSION){
-      users=defaultUsers();
-      localStorage.setItem(LS_USERS,JSON.stringify(users));
-      localStorage.setItem('lubriplan_version',APP_VERSION);
-    }else{
-      users=su?JSON.parse(su):defaultUsers();
-    }
-
-    tasks=st?JSON.parse(st):defaultTasks();
-  }catch(e){
-    users=defaultUsers();
-    tasks=defaultTasks();
-  }
-  cloudInit();
+  try{const su=localStorage.getItem(LS_USERS),st=localStorage.getItem(LS_TASKS);users=su?JSON.parse(su):defaultUsers();tasks=st?JSON.parse(st):defaultTasks();}catch(e){users=defaultUsers();tasks=defaultTasks();}
+  cloudInit(); // ☁️ récupère les données partagées si Supabase est configuré
 }
 function saveUsers(){try{localStorage.setItem(LS_USERS,JSON.stringify(users));}catch(e){}cloudSave('users');}
 function saveTasks(){try{localStorage.setItem(LS_TASKS,JSON.stringify(tasks));}catch(e){}cloudSave('tasks');}
-function resetAllData(){showCf('Réinitialiser','Revenir aux données par défaut ?',()=>{localStorage.removeItem(LS_TASKS);localStorage.removeItem(LS_USERS);localStorage.removeItem('lubriplan_version');loadData();toast('Données réinitialisées');render();});}
+function resetAllData(){showCf('Réinitialiser','Revenir aux données par défaut ?',()=>{localStorage.removeItem(LS_TASKS);localStorage.removeItem(LS_USERS);loadData();toast('Données réinitialisées');render();});}
 const nextTaskId=()=>tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;
 const nextUserId=()=>users.reduce((m,u)=>Math.max(m,u.id),0)+1;
 function getMachineList(){return[...new Set(tasks.map(t=>t.loc).filter(Boolean))].sort();}
@@ -249,6 +232,7 @@ function fmtD(d){
 }
 function today(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function toISO(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+// Ajoute l'intervalle de la fréquence à une date ISO → nouvelle date ISO
 function addIntervalISO(iso,freq){
   const d=new Date(iso+'T00:00:00');if(isNaN(d))return iso;
   if(freq==='Hebdomadaire')d.setDate(d.getDate()+7);
@@ -260,11 +244,12 @@ function initials(n){return String(n||'').split(' ').map(w=>w[0]).join('').toUpp
 function getTechName(id){const u=users.find(x=>x.id===id);return u?u.name:'—';}
 function getTechOptions(selId){return users.filter(u=>u.role==='tech'&&u.active).map(u=>`<option value="${u.id}"${u.id===selId?' selected':''}>${u.name}</option>`).join('');}
 
+// Le cycle courant (occurrence due à t.date) a-t-il été effectué ?
 function isCycleDone(t){
   const h=(t.hist||[]).filter(Boolean);
   if(!h.length)return false;
-  const last=h.reduce((a,b)=>a>b?a:b);
-  return addIntervalISO(last,t.freq)===t.date;
+  const last=h.reduce((a,b)=>a>b?a:b);          // dernière date d'intervention (ISO se compare bien)
+  return addIntervalISO(last,t.freq)===t.date;   // l'échéance a été roulée juste après cette intervention
 }
 function getStatus(t){
   if(isCycleDone(t))return'done';
@@ -274,7 +259,7 @@ function getStatus(t){
 }
 const sLabel=s=>({done:'Effectué',late:'En retard',soon:'Bientôt',pending:'Planifié'})[s];
 const sClass=s=>({done:'s-done',late:'s-late',soon:'s-soon',pending:'s-pend'})[s];
-const cLabel=c=>({1:'Critique',2:'Moyenne',3:'Faible'})[c]||c;
+const cLabel=c=>({1:'Critique',2:'Moyenne',3:'Faible'})[c]||c; // 3 niveaux
 const cClass=c=>'c'+c;
 const tClass=t=>t==='Huile'?'t-oil':'t-grease';
 function getStats(){
@@ -376,6 +361,7 @@ function getWeekNumber(date){
 function weekInYear(iso,yr){const d=new Date(iso+'T00:00:00');if(isNaN(d)||d.getFullYear()!==yr)return -1;return getWeekNumber(d);}
 function dateOfWeekISO(w,yr){const d=new Date(yr,0,1+(w-1)*7);const dow=d.getDay()||7;const mon=new Date(d);mon.setDate(d.getDate()-dow+1);return toISO(mon);}
 function completedWeeksSet(t,yr){const s=new Set();(t.hist||[]).forEach(d=>{const w=weekInYear(d,yr);if(w>0)s.add(w);});return s;}
+// Semaines FUTURES planifiées (projetées depuis la prochaine échéance t.date)
 function getActiveWeeksClean(t,yr){
   if(!t.date)return new Set();
   const base=new Date(t.date+'T00:00:00');if(isNaN(base))return new Set();
@@ -427,7 +413,7 @@ function buildCalView(){
         if(!allW.has(w))return`<td style="border:1px solid #e2e8f0;background:${rb}"></td>`;
         const isCur=w===cw&&calYear===now.getFullYear(),isPast=w<cw&&calYear===now.getFullYear(),isSoon=!isPast&&!isCur&&calYear===now.getFullYear()&&(w-cw)<=1;
         let bg,border;
-        if(comp.has(w)){bg='#22C55E';border='#15803D';}
+        if(comp.has(w)){bg='#22C55E';border='#15803D';}        // ✅ seulement cette occurrence cochée
         else if(isPast||isCur){bg='#EF4444';border='#B91C1C';}
         else if(isSoon){bg='#F59E0B';border='#B45309';}
         else{bg='#3B82F6';border='#1D4ED8';}
@@ -439,7 +425,7 @@ function buildCalView(){
   });
   return header+tabsHTML+`<div class="cal-scroll" style="margin-top:0"><table style="border-collapse:collapse;width:100%;font-family:var(--font)"><thead><tr><th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:160px">ÉQUIPEMENT</th><th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:130px">LUBRIFIANT</th><th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:100px">FRÉQUENCE</th>${mhc}</tr><tr>${whc}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-
+// Cocher / décocher UNE occurrence (une semaine) → recalcule la prochaine échéance
 function calClickWeek(si,week){
   const t=tasks[si],cc=isAdmin()||t.techId===currentUser.id;
   if(!cc){toast('Vous ne pouvez cocher que vos propres tâches','err');return;}
@@ -449,6 +435,7 @@ function calClickWeek(si,week){
       const occ=dateOfWeekISO(week,calYear);
       t.hist=(t.hist||[]).filter(d=>weekInYear(d,calYear)!==week);
       const h=(t.hist||[]).filter(Boolean);
+      // si plus aucune intervention postérieure, la tâche redevient due à cette date
       if(!h.length||h.every(d=>d<occ))t.date=occ;
       saveTasks();toast('Intervention annulée','warn');render();
     });
@@ -515,7 +502,7 @@ function buildColoredWeeklySheet(lib,wb,taskList,weeks,yr,cw,sheetName,letter){
   const totalRows=aoa.length;
 
   function weekColor(t,w,comp){
-    if(comp.has(w))return{bg:'22C55E',fg:'FFFFFF'};
+    if(comp.has(w))return{bg:'22C55E',fg:'FFFFFF'};   // ✅ effectué
     const isCur=(w===cw&&yr===now.getFullYear());
     const isPast=(w<cw&&yr===now.getFullYear());
     const isSoon=(!isPast&&!isCur&&yr===now.getFullYear()&&(w-cw)<=1);
@@ -741,6 +728,7 @@ function toggleUserActive(i){users[i].active=!users[i].active;saveUsers();toast(
 function delUser(i){showCf('Supprimer',`Supprimer <strong>${esc(users[i].name)}</strong> ?`,()=>{users.splice(i,1);saveUsers();toast('Supprimé','warn');render();});}
 
 // ── ACTIONS ──
+// Cocher dans la liste = effectuer l'occurrence due → l'échéance roule selon la fréquence
 function toggleDone(si,el){
   const t=tasks[si];
   if(!isAdmin()&&t.techId!==currentUser.id){el.checked=isCycleDone(t);toast('Vous ne pouvez cocher que vos tâches','err');return;}
