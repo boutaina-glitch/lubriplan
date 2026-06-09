@@ -1,14 +1,56 @@
-cat > /mnt/user-data/outputs/lubriplan/app.js << 'ENDOFFILE'
-// LubriPlan — app.js FINAL
-// ✅ Excel coloré via xlsx-js-style (G=jaune/rouge, V=rouge/bleu)
-// ✅ Recherche lettre par lettre sans perte de focus
-// ✅ Filtres combinés multi-critères
-// ✅ Historique avec dates exactes
+// LubriPlan — app.js (version modifiée)
+// ✅ Sélection multiple + suppression groupée
+// ✅ Complétion PAR OCCURRENCE (une date cochée ≠ toute la ligne)
+// ✅ Échéance roulante : cocher une date recalcule la prochaine échéance selon la fréquence
+// ✅ Criticité sur 3 niveaux
+// ✅ Synchronisation cloud optionnelle (Supabase) → mêmes données sur tous les navigateurs
 
 const LS_TASKS='lubriplan_tasks';
 const LS_USERS='lubriplan_users';
 const FREQ_M={Hebdomadaire:.25,Mensuelle:1,Bimestrielle:2,Trimestrielle:3,Semestrielle:6,Annuelle:12};
 const MONTHS_S=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+
+// ══════════════════════════════════════════════════════════
+// ☁️  SYNCHRONISATION CLOUD (Supabase) — pour avoir les MÊMES
+//     données sur tous les navigateurs / appareils.
+//     1) Crée un projet gratuit sur https://supabase.com
+//     2) Dans "SQL Editor", exécute :
+//          create table if not exists lp_kv (k text primary key, v jsonb);
+//          alter table lp_kv enable row level security;
+//          create policy "public" on lp_kv for all using (true) with check (true);
+//     3) Settings → API : copie l'URL du projet et la clé "anon public"
+//     4) Colle-les ci-dessous (entre les guillemets)
+//     5) Dans index.html, AVANT <script src="app.js">, ajoute :
+//          <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+//     Tant que ces deux constantes sont vides, l'app continue de
+//     fonctionner normalement avec le stockage local du navigateur.
+// ══════════════════════════════════════════════════════════
+const SB_URL='';   // ex: 'https://xxxx.supabase.co'
+const SB_KEY='';   // ex: 'eyJhbGciOi...' (clé anon public)
+let _sb=null;
+function sbClient(){
+  if(_sb)return _sb;
+  if(!SB_URL||!SB_KEY)return null;
+  if(typeof window==='undefined'||typeof window.supabase==='undefined')return null;
+  _sb=window.supabase.createClient(SB_URL,SB_KEY);
+  return _sb;
+}
+async function cloudInit(){
+  const c=sbClient();if(!c)return;
+  try{
+    const{data,error}=await c.from('lp_kv').select('k,v');
+    if(error)return;
+    const tk=(data||[]).find(r=>r.k==='tasks'),us=(data||[]).find(r=>r.k==='users');
+    if(us&&Array.isArray(us.v))users=us.v; else await cloudSave('users');
+    if(tk&&Array.isArray(tk.v))tasks=tk.v; else await cloudSave('tasks');
+    try{localStorage.setItem(LS_USERS,JSON.stringify(users));localStorage.setItem(LS_TASKS,JSON.stringify(tasks));}catch(e){}
+    if(currentUser)render();
+  }catch(e){}
+}
+async function cloudSave(key){
+  const c=sbClient();if(!c)return;
+  try{await c.from('lp_kv').upsert({k:key,v:(key==='tasks'?tasks:users)},{onConflict:'k'});}catch(e){}
+}
 
 let tasks=[],users=[],currentUser=null;
 let editTaskIdx=-1,editUserIdx=-1;
@@ -18,6 +60,7 @@ let cfCb=null,currentView='liste';
 let calFilterMachine='';
 let calViewType='graisse';
 let filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};
+let selectedTasks=new Set(); // ids des tâches cochées pour suppression groupée
 
 // ── DONNÉES PAR DÉFAUT ──
 function defaultUsers(){
@@ -84,16 +127,18 @@ function defaultTasks(){
 }
 
 // ── SAUVEGARDE ──
-function loadData(){try{const su=localStorage.getItem(LS_USERS),st=localStorage.getItem(LS_TASKS);users=su?JSON.parse(su):defaultUsers();tasks=st?JSON.parse(st):defaultTasks();}catch(e){users=defaultUsers();tasks=defaultTasks();}}
-function saveUsers(){try{localStorage.setItem(LS_USERS,JSON.stringify(users));}catch(e){}}
-function saveTasks(){try{localStorage.setItem(LS_TASKS,JSON.stringify(tasks));}catch(e){}}
+function loadData(){
+  try{const su=localStorage.getItem(LS_USERS),st=localStorage.getItem(LS_TASKS);users=su?JSON.parse(su):defaultUsers();tasks=st?JSON.parse(st):defaultTasks();}catch(e){users=defaultUsers();tasks=defaultTasks();}
+  cloudInit(); // ☁️ récupère les données partagées si Supabase est configuré
+}
+function saveUsers(){try{localStorage.setItem(LS_USERS,JSON.stringify(users));}catch(e){}cloudSave('users');}
+function saveTasks(){try{localStorage.setItem(LS_TASKS,JSON.stringify(tasks));}catch(e){}cloudSave('tasks');}
 function resetAllData(){showCf('Réinitialiser','Revenir aux données par défaut ?',()=>{localStorage.removeItem(LS_TASKS);localStorage.removeItem(LS_USERS);loadData();toast('Données réinitialisées');render();});}
 const nextTaskId=()=>tasks.reduce((m,t)=>Math.max(m,t.id),0)+1;
 const nextUserId=()=>users.reduce((m,u)=>Math.max(m,u.id),0)+1;
 function getMachineList(){return[...new Set(tasks.map(t=>t.loc).filter(Boolean))].sort();}
 
 // ── DÉTECTION BIBLIOTHÈQUE EXCEL ──
-// Priorité : XLSXStyle (supporte les styles) > XLSX standard (sans couleurs)
 function xlsxLib(){
   if(typeof XLSXStyle!=='undefined')return XLSXStyle;
   if(typeof XLSX!=='undefined')return XLSX;
@@ -115,12 +160,12 @@ function doLogin(){
   document.getElementById('userRole').textContent=currentUser.role==='admin'?'Admin':'Technicien';
   switchView('liste');
 }
-function doLogout(){currentUser=null;filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};document.getElementById('app').style.display='none';document.getElementById('loginScreen').style.display='flex';document.getElementById('loginUser').value='';document.getElementById('loginPwd').value='';document.getElementById('loginErr').textContent='';}
+function doLogout(){currentUser=null;filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};selectedTasks.clear();document.getElementById('app').style.display='none';document.getElementById('loginScreen').style.display='flex';document.getElementById('loginUser').value='';document.getElementById('loginPwd').value='';document.getElementById('loginErr').textContent='';}
 const isAdmin=()=>currentUser&&currentUser.role==='admin';
 
 // ── NAVIGATION ──
 function switchView(v){
-  currentView=v;closeDp();filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};
+  currentView=v;closeDp();filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};selectedTasks.clear();
   ['liste','planning','techniciens','historique','utilisateurs'].forEach(id=>{const el=document.getElementById('nav_'+id);if(el)el.classList.toggle('active',id===v);});
   const titles={liste:'Planning des tâches',planning:'Planning annuel',techniciens:'Vue par technicien',historique:'Historique des interventions',utilisateurs:'Gestion des utilisateurs'};
   const subs={liste:'Triées par criticité',planning:'Calendrier par semaines',techniciens:'Charge de travail',historique:'Interventions effectuées',utilisateurs:'Comptes et rôles'};
@@ -130,7 +175,7 @@ function switchView(v){
 // ── RENDER ──
 function render(){
   const c=document.getElementById('content');
-  if(currentView==='liste'){c.innerHTML=buildListView();restoreFilterState();}
+  if(currentView==='liste'){c.innerHTML=buildListView();restoreFilterState();refreshBulk();}
   else if(currentView==='planning')c.innerHTML=buildCalView();
   else if(currentView==='techniciens')c.innerHTML=buildTechView();
   else if(currentView==='historique')c.innerHTML=buildHistView();
@@ -149,6 +194,7 @@ function onFilterChange(){
     if(se)se.innerHTML=buildFilterSummary();
     const rb=document.getElementById('filterResetBtn');
     if(rb)rb.style.display=af>0?'':'none';
+    refreshBulk();
   }else{render();if(currentView==='liste')restoreFilterState();}
 }
 function countActiveFilters(){return[filterState.fltCrit,filterState.fltType,filterState.fltTech,filterState.fltStat,filterState.fltMach,filterState.srch].filter(Boolean).length;}
@@ -156,7 +202,27 @@ function restoreFilterState(){['fltCrit','fltType','fltTech','fltStat','fltMach'
 function syncFilterState(){['fltCrit','fltType','fltTech','fltStat','fltMach','srch'].forEach(id=>{const el=document.getElementById(id);if(el)filterState[id]=el.value;});}
 function clearAllFilters(){filterState={fltCrit:'',fltType:'',fltTech:'',fltStat:'',fltMach:'',srch:''};render();}
 
-// ── HELPERS ──
+// ── SÉLECTION MULTIPLE / SUPPRESSION GROUPÉE ──
+function toggleSelectTask(id,el){if(el.checked)selectedTasks.add(id);else selectedTasks.delete(id);refreshBulk();}
+function toggleSelectAll(el){const vis=getFiltered();if(el.checked)vis.forEach(t=>selectedTasks.add(t.id));else vis.forEach(t=>selectedTasks.delete(t.id));const tb=document.getElementById('listTbody');if(tb)tb.innerHTML=buildTableRows(getFiltered(),countActiveFilters());refreshBulk();}
+function clearSelection(){selectedTasks.clear();render();}
+function deleteSelected(){
+  const ids=[...selectedTasks];if(!ids.length)return;
+  showCf('Supprimer la sélection',`Supprimer définitivement <strong>${ids.length}</strong> tâche${ids.length>1?'s':''} ?`,()=>{
+    tasks=tasks.filter(t=>!selectedTasks.has(t.id));selectedTasks.clear();saveTasks();toast(`${ids.length} tâche(s) supprimée(s)`,'warn');render();
+  });
+}
+function buildBulkBar(){
+  if(!isAdmin())return'';
+  const n=selectedTasks.size;if(!n)return'';
+  return`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;margin-bottom:10px;font-size:13px;color:#991B1B"><span><strong>${n}</strong> tâche${n>1?'s':''} sélectionnée${n>1?'s':''}</span><button class="btn btn-d btn-sm" onclick="deleteSelected()">🗑 Supprimer la sélection</button><button class="btn btn-s btn-sm" onclick="clearSelection()">Annuler</button></div>`;
+}
+function refreshBulk(){
+  const b=document.getElementById('bulkBar');if(b)b.innerHTML=buildBulkBar();
+  const sa=document.getElementById('selAll');if(sa){const vis=getFiltered();sa.checked=vis.length>0&&vis.every(t=>selectedTasks.has(t.id));}
+}
+
+// ── HELPERS DATES ──
 function fmtD(d){
   if(!d||d==='undefined'||d==='null')return'—';
   const s=String(d).trim();
@@ -165,24 +231,40 @@ function fmtD(d){
   return'—';
 }
 function today(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function toISO(d){return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+// Ajoute l'intervalle de la fréquence à une date ISO → nouvelle date ISO
+function addIntervalISO(iso,freq){
+  const d=new Date(iso+'T00:00:00');if(isNaN(d))return iso;
+  if(freq==='Hebdomadaire')d.setDate(d.getDate()+7);
+  else d.setMonth(d.getMonth()+Math.round(FREQ_M[freq]||1));
+  return toISO(d);
+}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function initials(n){return String(n||'').split(' ').map(w=>w[0]).join('').toUpperCase().substring(0,2);}
 function getTechName(id){const u=users.find(x=>x.id===id);return u?u.name:'—';}
 function getTechOptions(selId){return users.filter(u=>u.role==='tech'&&u.active).map(u=>`<option value="${u.id}"${u.id===selId?' selected':''}>${u.name}</option>`).join('');}
+
+// Le cycle courant (occurrence due à t.date) a-t-il été effectué ?
+function isCycleDone(t){
+  const h=(t.hist||[]).filter(Boolean);
+  if(!h.length)return false;
+  const last=h.reduce((a,b)=>a>b?a:b);          // dernière date d'intervention (ISO se compare bien)
+  return addIntervalISO(last,t.freq)===t.date;   // l'échéance a été roulée juste après cette intervention
+}
 function getStatus(t){
-  if(t.done)return'done';
-  const d=new Date(t.date),n=new Date();n.setHours(0,0,0,0);
+  if(isCycleDone(t))return'done';
+  const d=new Date(t.date+'T00:00:00'),n=new Date();n.setHours(0,0,0,0);
   const diff=(d-n)/86400000;
   if(diff<0)return'late';if(diff<=14)return'soon';return'pending';
 }
 const sLabel=s=>({done:'Effectué',late:'En retard',soon:'Bientôt',pending:'Planifié'})[s];
 const sClass=s=>({done:'s-done',late:'s-late',soon:'s-soon',pending:'s-pend'})[s];
-const cLabel=c=>({1:'Critique',2:'Haute',3:'Moyenne',4:'Faible'})[c]||c;
+const cLabel=c=>({1:'Critique',2:'Moyenne',3:'Faible'})[c]||c; // 3 niveaux
 const cClass=c=>'c'+c;
 const tClass=t=>t==='Huile'?'t-oil':'t-grease';
 function getStats(){
   const list=isAdmin()?tasks:tasks.filter(t=>t.techId===currentUser.id);
-  const total=list.length,done=list.filter(t=>t.done).length,late=list.filter(t=>getStatus(t)==='late').length,soon=list.filter(t=>getStatus(t)==='soon').length,crit1=list.filter(t=>t.crit===1).length;
+  const total=list.length,done=list.filter(t=>isCycleDone(t)).length,late=list.filter(t=>getStatus(t)==='late').length,soon=list.filter(t=>getStatus(t)==='soon').length,crit1=list.filter(t=>t.crit===1).length;
   return{total,done,late,soon,crit1,pct:total?Math.round(done/total*100):0};
 }
 function getFiltered(){
@@ -212,20 +294,20 @@ function buildListView(){
   const s=getStats(),all=getFiltered(),techs=users.filter(u=>u.role==='tech'&&u.active),machines=getMachineList();
   const af=countActiveFilters();
   const statsHTML=`<div class="stats-grid">
-    <div class="stat-card sc-blue"><div class="stat-label">Total tâches</div><div class="stat-value">${s.total}</div><div class="stat-sub">${s.pct}% complété</div><div class="prog-bar"><div class="prog-fill" style="width:${s.pct}%"></div></div></div>
-    <div class="stat-card sc-green"><div class="stat-label">Effectuées</div><div class="stat-value" style="color:var(--green)">${s.done}</div><div class="stat-sub">cette période</div></div>
+    <div class="stat-card sc-blue"><div class="stat-label">Total tâches</div><div class="stat-value">${s.total}</div><div class="stat-sub">${s.pct}% à jour</div><div class="prog-bar"><div class="prog-fill" style="width:${s.pct}%"></div></div></div>
+    <div class="stat-card sc-green"><div class="stat-label">Effectuées</div><div class="stat-value" style="color:var(--green)">${s.done}</div><div class="stat-sub">cycle en cours</div></div>
     <div class="stat-card sc-red"><div class="stat-label">En retard</div><div class="stat-value" style="color:var(--red)">${s.late}</div><div class="stat-sub">${s.late>0?'Action requise':'Aucun retard'}</div></div>
     <div class="stat-card sc-orange"><div class="stat-label">Échéance proche</div><div class="stat-value" style="color:var(--orange)">${s.soon}</div><div class="stat-sub">dans 14 jours</div></div>
     <div class="stat-card sc-yellow"><div class="stat-label">Criticité 1</div><div class="stat-value" style="color:var(--red)">${s.crit1}</div><div class="stat-sub">équipements critiques</div></div>
   </div>`;
-  const adminBtns=isAdmin()?`<div class="ctrl-actions"><button class="btn btn-s btn-sm" onclick="resetDone()">↺ Réinitialiser</button><div class="export-group"><button class="btn btn-s btn-sm" onclick="exportCSV()">📤 CSV</button><button class="btn btn-s btn-sm" onclick="exportXLSX()">📊 Excel</button></div><button class="btn btn-s btn-sm" onclick="document.getElementById('fileInput').click()">📥 Import</button><button class="btn btn-p" onclick="openTaskModal()">+ Nouvelle tâche</button></div>`:'';
+  const adminBtns=isAdmin()?`<div class="ctrl-actions"><div class="export-group"><button class="btn btn-s btn-sm" onclick="exportCSV()">📤 CSV</button><button class="btn btn-s btn-sm" onclick="exportXLSX()">📊 Excel</button></div><button class="btn btn-s btn-sm" onclick="document.getElementById('fileInput').click()">📥 Import</button><button class="btn btn-p" onclick="openTaskModal()">+ Nouvelle tâche</button></div>`:'';
   const techFilter=isAdmin()?`<select id="fltTech" onchange="onFilterChange()"><option value="">Tous techniciens</option>${techs.map(u=>`<option value="${u.id}"${String(filterState.fltTech)===String(u.id)?' selected':''}>${u.name}</option>`).join('')}</select>`:'';
   const mf=`<select id="fltMach" onchange="onFilterChange()"><option value="">Toutes machines</option>${machines.map(m=>`<option value="${esc(m)}"${filterState.fltMach===m?' selected':''}>${esc(m)}</option>`).join('')}</select>`;
   const badge=af>0?`<span style="display:inline-flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;font-weight:700;margin-left:4px">${af}</span>`:'';
   const ctrlHTML=`<div class="ctrl-bar">
     <div class="search-wrap"><span class="search-icon">🔍</span><input type="text" id="srch" placeholder="Rechercher…" value="${esc(filterState.srch)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onFilterChange()" onkeydown="event.stopPropagation()"/></div>
     ${mf}
-    <select id="fltCrit" onchange="onFilterChange()"><option value="">Toutes criticités</option><option value="1"${filterState.fltCrit==='1'?' selected':''}>🔴 Critique</option><option value="2"${filterState.fltCrit==='2'?' selected':''}>🟠 Haute</option><option value="3"${filterState.fltCrit==='3'?' selected':''}>🟡 Moyenne</option><option value="4"${filterState.fltCrit==='4'?' selected':''}>🟢 Faible</option></select>
+    <select id="fltCrit" onchange="onFilterChange()"><option value="">Toutes criticités</option><option value="1"${filterState.fltCrit==='1'?' selected':''}>🔴 Critique</option><option value="2"${filterState.fltCrit==='2'?' selected':''}>🟠 Moyenne</option><option value="3"${filterState.fltCrit==='3'?' selected':''}>🟢 Faible</option></select>
     <select id="fltType" onchange="onFilterChange()"><option value="">Tous types</option><option value="Huile"${filterState.fltType==='Huile'?' selected':''}>Huile</option><option value="Graisse"${filterState.fltType==='Graisse'?' selected':''}>Graisse</option></select>
     ${techFilter}
     <select id="fltStat" onchange="onFilterChange()"><option value="">Tous statuts</option><option value="late"${filterState.fltStat==='late'?' selected':''}>En retard</option><option value="soon"${filterState.fltStat==='soon'?' selected':''}>Bientôt</option><option value="pending"${filterState.fltStat==='pending'?' selected':''}>Planifié</option><option value="done"${filterState.fltStat==='done'?' selected':''}>Effectué</option></select>
@@ -233,14 +315,17 @@ function buildListView(){
     ${adminBtns}
   </div>`;
   const th=(k,l)=>`<th class="${sortCol===k?'sorted':''}" onclick="srt('${k}')">${l}${sortCol===k?' '+(sortAsc?'↑':'↓'):''}</th>`;
-  const thead=`${th('comp','Composant')} ${th('crit','Criticité')} ${th('type','Type')} ${th('prod','Produit')} ${th('freq','Fréquence')} ${isAdmin()?th('techId','Technicien'):''} ${th('date','Échéance')} <th>Statut</th> <th style="text-align:center">Fait</th> ${isAdmin()?'<th></th>':''}`;
-  return statsHTML+ctrlHTML+`<div id="filterSummary">${buildFilterSummary()}</div><div class="tbl-wrap"><table><thead><tr>${thead}</tr></thead><tbody id="listTbody">${buildTableRows(all,af)}</tbody></table></div>`;
+  const selTh=isAdmin()?`<th style="width:34px;text-align:center"><input type="checkbox" id="selAll" onclick="toggleSelectAll(this)" title="Tout sélectionner"/></th>`:'';
+  const thead=`${selTh}${th('comp','Composant')} ${th('crit','Criticité')} ${th('type','Type')} ${th('prod','Produit')} ${th('freq','Fréquence')} ${isAdmin()?th('techId','Technicien'):''} ${th('date','Échéance')} <th>Statut</th> <th style="text-align:center">Fait</th> ${isAdmin()?'<th></th>':''}`;
+  return statsHTML+ctrlHTML+`<div id="filterSummary">${buildFilterSummary()}</div><div id="bulkBar">${buildBulkBar()}</div><div class="tbl-wrap"><table><thead><tr>${thead}</tr></thead><tbody id="listTbody">${buildTableRows(all,af)}</tbody></table></div>`;
 }
 function buildTableRows(all,af){
-  if(!all.length)return`<tr><td colspan="10"><div class="empty"><div class="empty-icon">🔍</div><p>Aucune tâche trouvée${af>0?' — <a href="#" onclick="clearAllFilters();return false;" style="color:var(--accent)">Effacer les filtres</a>':''}</p></div></td></tr>`;
+  if(!all.length)return`<tr><td colspan="12"><div class="empty"><div class="empty-icon">🔍</div><p>Aucune tâche trouvée${af>0?' — <a href="#" onclick="clearAllFilters();return false;" style="color:var(--accent)">Effacer les filtres</a>':''}</p></div></td></tr>`;
   return all.map(t=>{
     const si=tasks.indexOf(t),st=getStatus(t),cc=isAdmin()||t.techId===currentUser.id;
+    const selTd=isAdmin()?`<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" ${selectedTasks.has(t.id)?'checked':''} onclick="toggleSelectTask(${t.id},this)"/></td>`:'';
     return`<tr style="cursor:pointer" onclick="openDp(${si})">
+      ${selTd}
       <td onclick="event.stopPropagation()"><div class="comp-name">${esc(t.comp)}</div>${t.loc?`<div class="comp-loc">📍 ${esc(t.loc)}</div>`:''}</td>
       <td><span class="badge ${cClass(t.crit)}">${t.crit} — ${cLabel(t.crit)}</span></td>
       <td><span class="badge ${tClass(t.type)}">${t.type}</span></td>
@@ -249,7 +334,7 @@ function buildTableRows(all,af){
       ${isAdmin()?`<td style="font-size:12px">${esc(getTechName(t.techId))}</td>`:''}
       <td style="font-size:12px;font-family:var(--mono)">${fmtD(t.date)}</td>
       <td><span class="badge ${sClass(st)}">${sLabel(st)}</span></td>
-      <td class="chk-wrap" onclick="event.stopPropagation()"><input type="checkbox" ${t.done?'checked':''} ${cc?'':'disabled'} onchange="toggleDone(${si},this)"/></td>
+      <td class="chk-wrap" onclick="event.stopPropagation()"><input type="checkbox" ${isCycleDone(t)?'checked':''} ${cc?'':'disabled'} onchange="toggleDone(${si},this)"/></td>
       ${isAdmin()?`<td onclick="event.stopPropagation()"><div style="display:flex;gap:4px"><button class="btn-icon" onclick="openTaskModal(${si})">✏</button><button class="btn-icon" onclick="delTask(${si})" style="color:var(--red)">🗑</button></div></td>`:''}
     </tr>`;
   }).join('');
@@ -273,6 +358,10 @@ function getWeekNumber(date){
   const ys=new Date(Date.UTC(d.getUTCFullYear(),0,1));
   return Math.ceil((((d-ys)/86400000)+1)/7);
 }
+function weekInYear(iso,yr){const d=new Date(iso+'T00:00:00');if(isNaN(d)||d.getFullYear()!==yr)return -1;return getWeekNumber(d);}
+function dateOfWeekISO(w,yr){const d=new Date(yr,0,1+(w-1)*7);const dow=d.getDay()||7;const mon=new Date(d);mon.setDate(d.getDate()-dow+1);return toISO(mon);}
+function completedWeeksSet(t,yr){const s=new Set();(t.hist||[]).forEach(d=>{const w=weekInYear(d,yr);if(w>0)s.add(w);});return s;}
+// Semaines FUTURES planifiées (projetées depuis la prochaine échéance t.date)
 function getActiveWeeksClean(t,yr){
   if(!t.date)return new Set();
   const base=new Date(t.date+'T00:00:00');if(isNaN(base))return new Set();
@@ -318,12 +407,13 @@ function buildCalView(){
   Object.keys(byMachine).sort().forEach((mn,mi)=>{
     const mt=byMachine[mn],rb=mi%2===0?'#f8fafc':'#fff';
     mt.forEach((t,ti)=>{
-      const si=tasks.indexOf(t),aw=getActiveWeeksClean(t,calYear),letter=isGraisse?'G':'V';
+      const si=tasks.indexOf(t),future=getActiveWeeksClean(t,calYear),comp=completedWeeksSet(t,calYear),letter=isGraisse?'G':'V';
+      const allW=new Set([...future,...comp]);
       const wc=weeks.map(w=>{
-        if(!aw.has(w))return`<td style="border:1px solid #e2e8f0;background:${rb}"></td>`;
+        if(!allW.has(w))return`<td style="border:1px solid #e2e8f0;background:${rb}"></td>`;
         const isCur=w===cw&&calYear===now.getFullYear(),isPast=w<cw&&calYear===now.getFullYear(),isSoon=!isPast&&!isCur&&calYear===now.getFullYear()&&(w-cw)<=1;
         let bg,border;
-        if(t.done){bg='#22C55E';border='#15803D';}
+        if(comp.has(w)){bg='#22C55E';border='#15803D';}        // ✅ seulement cette occurrence cochée
         else if(isPast||isCur){bg='#EF4444';border='#B91C1C';}
         else if(isSoon){bg='#F59E0B';border='#B45309';}
         else{bg='#3B82F6';border='#1D4ED8';}
@@ -335,18 +425,33 @@ function buildCalView(){
   });
   return header+tabsHTML+`<div class="cal-scroll" style="margin-top:0"><table style="border-collapse:collapse;width:100%;font-family:var(--font)"><thead><tr><th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:160px">ÉQUIPEMENT</th><th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:130px">LUBRIFIANT</th><th rowspan="2" style="background:#1a365d;color:#fff;padding:8px 12px;font-size:12px;font-weight:700;border:1px solid #2d4a7a;text-align:left;min-width:100px">FRÉQUENCE</th>${mhc}</tr><tr>${whc}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+// Cocher / décocher UNE occurrence (une semaine) → recalcule la prochaine échéance
 function calClickWeek(si,week){
   const t=tasks[si],cc=isAdmin()||t.techId===currentUser.id;
   if(!cc){toast('Vous ne pouvez cocher que vos propres tâches','err');return;}
-  showCf('Confirmer intervention',`Marquer <strong>${esc(t.comp)}</strong> (S${week}) comme effectué ?`,()=>{tasks[si].done=true;tasks[si].hist.push(today());saveTasks();toast('Tâche marquée effectuée');render();});
+  const comp=completedWeeksSet(t,calYear);
+  if(comp.has(week)){
+    showCf('Annuler l\'intervention',`Annuler l'intervention de <strong>${esc(t.comp)}</strong> en S${week} ?`,()=>{
+      const occ=dateOfWeekISO(week,calYear);
+      t.hist=(t.hist||[]).filter(d=>weekInYear(d,calYear)!==week);
+      const h=(t.hist||[]).filter(Boolean);
+      // si plus aucune intervention postérieure, la tâche redevient due à cette date
+      if(!h.length||h.every(d=>d<occ))t.date=occ;
+      saveTasks();toast('Intervention annulée','warn');render();
+    });
+  }else{
+    showCf('Confirmer l\'intervention',`Marquer <strong>${esc(t.comp)}</strong> (S${week}) comme effectué ?<br><span style="font-size:12px;color:#64748b">La prochaine échéance sera recalculée selon la fréquence (${t.freq.toLowerCase()}).</span>`,()=>{
+      const occ=dateOfWeekISO(week,calYear);
+      t.hist.push(occ);
+      t.date=addIntervalISO(occ,t.freq);
+      saveTasks();toast(`✓ S${week} effectué — prochaine échéance ${fmtD(t.date)}`);render();
+    });
+  }
 }
 
 // ══════════════════════════════════════════════════════════
-// EXCEL COLORÉ — utilise XLSXStyle si dispo, XLSX sinon
-// Couleurs : 22C55E=vert, 3B82F6=bleu, EF4444=rouge, F59E0B=orange
+// EXCEL COLORÉ
 // ══════════════════════════════════════════════════════════
-
-// Crée un style cellule complet
 function mkStyle(bgRgb,fgRgb,bold,sz,halign,thickRight){
   const thin={style:'thin',color:{rgb:'D1D5DB'}};
   const right=thickRight?{style:'medium',color:{rgb:'374151'}}:thin;
@@ -357,8 +462,6 @@ function mkStyle(bgRgb,fgRgb,bold,sz,halign,thickRight){
     border:{top:thin,bottom:thin,left:thin,right:right}
   };
 }
-
-// Applique un style à une cellule (crée si absente)
 function applyStyle(ws,r,c,style,val){
   const ref=XLSX.utils.encode_cell({r,c});
   if(!ws[ref]){
@@ -367,98 +470,77 @@ function applyStyle(ws,r,c,style,val){
   }
   ws[ref].s=style;
 }
-
-// Feuille planning semaines avec couleurs
 function buildColoredWeeklySheet(lib,wb,taskList,weeks,yr,cw,sheetName,letter){
   if(!taskList.length)return;
   const now=new Date();
-  const mwMap=buildMonthWeekMap(yr);
   const mr=buildMonthRanges(yr);
   const byMachine={};
   taskList.forEach(t=>{if(!byMachine[t.comp])byMachine[t.comp]=[];byMachine[t.comp].push(t);});
   const machOrder=Object.keys(byMachine).sort();
 
-  // ── Construire AOA ──
   const aoa=[];
-
-  // Ligne 0 : titre mois (une cellule par mois, vide pour les suivantes)
   const moRow=['ÉQUIPEMENT','SOUS-ÉQUIPEMENT','LUBRIFIANT'];
   const moLabelPos={};
   mr.forEach(m=>{moLabelPos[m.wStart]=MONTHS_S[m.mo];for(let w=m.wStart;w<=m.wEnd;w++)if(w!==m.wStart)moLabelPos[w]='';});
   weeks.forEach(w=>moRow.push(moLabelPos[w]!==undefined?moLabelPos[w]:''));
   aoa.push(moRow);
-
-  // Ligne 1 : S1..S52
   aoa.push(['ÉQUIPEMENT','SOUS-ÉQUIPEMENT','LUBRIFIANT',...weeks.map(w=>`S${w}`)]);
 
-  // Lignes données
   const rowMeta=[];
   machOrder.forEach(mn=>{
     byMachine[mn].forEach((t,ti)=>{
-      const aw=getActiveWeeksClean(t,yr);
+      const future=getActiveWeeksClean(t,yr),comp=completedWeeksSet(t,yr);
+      const allW=new Set([...future,...comp]);
       const row=[ti===0?mn:'',t.note?t.note.substring(0,55)+(t.note.length>55?'…':''):'',t.prod||''];
-      weeks.forEach(w=>row.push(aw.has(w)?letter:''));
+      weeks.forEach(w=>row.push(allW.has(w)?letter:''));
       aoa.push(row);
-      rowMeta.push({t,mn,ti,aw,groupIdx:machOrder.indexOf(mn)});
+      rowMeta.push({t,mn,ti,allW,comp,groupIdx:machOrder.indexOf(mn)});
     });
   });
 
   const ws=lib.utils.aoa_to_sheet(aoa);
   const totalRows=aoa.length;
 
-  // ── Couleur semaine selon état ──
-  function weekColor(t,w){
+  function weekColor(t,w,comp){
+    if(comp.has(w))return{bg:'22C55E',fg:'FFFFFF'};   // ✅ effectué
     const isCur=(w===cw&&yr===now.getFullYear());
     const isPast=(w<cw&&yr===now.getFullYear());
     const isSoon=(!isPast&&!isCur&&yr===now.getFullYear()&&(w-cw)<=1);
-    if(t.done)     return{bg:'22C55E',fg:'FFFFFF'}; // ✅ vert
-    if(isPast||isCur) return{bg:'EF4444',fg:'FFFFFF'}; // 🔴 rouge
-    if(isSoon)     return{bg:'F59E0B',fg:'FFFFFF'}; // 🟡 orange
-    return{bg:'3B82F6',fg:'FFFFFF'};                // 🔵 bleu
+    if(isPast||isCur)return{bg:'EF4444',fg:'FFFFFF'};
+    if(isSoon)return{bg:'F59E0B',fg:'FFFFFF'};
+    return{bg:'3B82F6',fg:'FFFFFF'};
   }
 
-  // ── Appliquer styles ──
   for(let ri=0;ri<totalRows;ri++){
     for(let ci=0;ci<55;ci++){
       const ref=lib.utils.encode_cell({r:ri,c:ci});
       if(!ws[ref])ws[ref]={t:'s',v:''};
       const cellVal=aoa[ri]?aoa[ri][ci]:'';
-
       if(ri===0){
-        // Ligne mois
         const isFix=ci<3;
         ws[ref].s=mkStyle(isFix?'1E3A5F':'1B4879','FFFFFF',true,isFix?10:9,'center',ci===2);
-
       }else if(ri===1){
-        // Ligne semaines
         const w=ci-2;
         const isCurW=(w===cw&&yr===now.getFullYear());
         const bg=ci<3?'111827':(isCurW?'EF4444':'1E293B');
         ws[ref].s=mkStyle(bg,'FFFFFF',true,8,'center',ci===2);
-
       }else{
-        // Lignes données
         const meta=rowMeta[ri-2];
         if(!meta)continue;
         const gi=meta.groupIdx;
         const rb=gi%2===0?'FFFFFF':'F8FAFC';
-
         if(ci===0){
-          // Colonne machine
           const hasN=cellVal&&String(cellVal).trim()!=='';
           ws[ref].s=mkStyle(hasN?'DBEAFE':rb,hasN?'1E3A5F':'9CA3AF',hasN,9,'center',false);
         }else if(ci===1){
-          // Sous-équipement
           ws[ref].s=mkStyle(rb,'374151',false,8,'left',false);
         }else if(ci===2){
-          // Lubrifiant
           const hasL=cellVal&&String(cellVal).trim()!=='';
           ws[ref].s=mkStyle(rb,hasL?'1E40AF':'9CA3AF',hasL,8,'left',true);
         }else{
-          // Colonne semaine
           const w=ci-2;
           if(cellVal===letter){
-            const col=weekColor(meta.t,w);
+            const col=weekColor(meta.t,w,meta.comp);
             ws[ref].s=mkStyle(col.bg,col.fg,true,9,'center',false);
           }else{
             ws[ref].s=mkStyle(rb,'D1D5DB',false,8,'center',false);
@@ -470,27 +552,19 @@ function buildColoredWeeklySheet(lib,wb,taskList,weeks,yr,cw,sheetName,letter){
 
   ws['!cols']=[{wch:20},{wch:34},{wch:22},...Array(52).fill({wch:3.2})];
   ws['!rows']=[{hpt:18},{hpt:14},...Array(aoa.length-2).fill({hpt:15})];
-  // Figer les 3 premières colonnes et 2 premières lignes
-  if(ws['!freeze']!==undefined)ws['!freeze']={xSplit:3,ySplit:2};
-  else ws['!freeze']={xSplit:3,ySplit:2};
-
+  ws['!freeze']={xSplit:3,ySplit:2};
   lib.utils.book_append_sheet(wb,ws,sheetName);
 }
 
-// Feuille simple (Base_Equipements / Historique) avec styles
 function buildSimpleSheet(lib,headers,rows,statusColIdx){
   const aoa=[headers,...rows];
   const ws=lib.utils.aoa_to_sheet(aoa);
-
-  // Style entête
   const hdrStyle=mkStyle('1E3A5F','FFFFFF',true,10,'center',false);
   headers.forEach((_,ci)=>{
     const ref=lib.utils.encode_cell({r:0,c:ci});
     if(!ws[ref])ws[ref]={t:'s',v:''};
     ws[ref].s=hdrStyle;
   });
-
-  // Style données
   const statusColors={'Effectué':{bg:'D1FAE5',fg:'065F46'},'Planifié':{bg:'DBEAFE',fg:'1E40AF'},'En retard':{bg:'FEE2E2',fg:'991B1B'},'Bientôt':{bg:'FEF3C7',fg:'92400E'}};
   rows.forEach((row,ri)=>{
     const rb=ri%2===0?'FFFFFF':'F8FAFC';
@@ -513,25 +587,18 @@ function downloadMachinePlanning(machineName){
   if(!lib){toast('Bibliothèque Excel non chargée','err');return;}
   const mt=tasks.filter(t=>t.loc===machineName);
   if(!mt.length){toast('Aucune tâche pour cette machine','err');return;}
-
   const wb=lib.utils.book_new();
   const weeks=Array.from({length:52},(_,i)=>i+1);
   const cw=getWeekNumber(new Date());
-
-  // Feuille 1 : Base_Equipements
   const bh=['ÉQUIPEMENT','PRODUIT','FRÉQUENCE','TECHNICIEN','PROCHAINE ÉCHÉANCE','STATUT'];
   const br=mt.map(t=>[t.comp,t.prod||'',t.freq,getTechName(t.techId),fmtD(t.date),sLabel(getStatus(t))]);
   const wsBase=buildSimpleSheet(lib,bh,br,5);
   wsBase['!cols']=[{wch:25},{wch:28},{wch:14},{wch:18},{wch:16},{wch:14}];
   lib.utils.book_append_sheet(wb,wsBase,'Base_Equipements');
-
-  // Feuilles planning
   const gr=mt.filter(t=>t.type==='Graisse');
   const hu=mt.filter(t=>t.type==='Huile');
   if(gr.length)buildColoredWeeklySheet(lib,wb,gr,weeks,calYear,cw,`Planning_Graissage_${calYear}`,'G');
   if(hu.length)buildColoredWeeklySheet(lib,wb,hu,weeks,calYear,cw,`Planning_Vidange_${calYear}`,'V');
-
-  // Feuille Historique
   const hh=['DATE INTERVENTION','ÉQUIPEMENT','TYPE','PRODUIT','FRÉQUENCE','TECHNICIEN'];
   const hr=[];
   mt.forEach(t=>(t.hist||[]).forEach(d=>{if(d&&d!=='undefined'){hr.push([fmtD(d),t.comp,t.type,t.prod||'—',t.freq,getTechName(t.techId)]);};}));
@@ -539,7 +606,6 @@ function downloadMachinePlanning(machineName){
   const wsHist=buildSimpleSheet(lib,hh,hr,-1);
   wsHist['!cols']=[{wch:16},{wch:25},{wch:10},{wch:25},{wch:14},{wch:18}];
   lib.utils.book_append_sheet(wb,wsHist,'Historique');
-
   const safe=machineName.replace(/[/\\:*?"<>|]/g,'_');
   lib.writeFile(wb,`LubriPlan_${safe}_${calYear}.xlsx`);
   toast(`📊 Planning "${machineName}" téléchargé`);
@@ -551,18 +617,14 @@ function downloadAllPlannings(){
   const wb=lib.utils.book_new();
   const weeks=Array.from({length:52},(_,i)=>i+1);
   const cw=getWeekNumber(new Date());
-
-  // Récapitulatif
   const rh=['ÉQUIPEMENT','MACHINE','CRITICITÉ','TYPE','PRODUIT','FRÉQUENCE','TECHNICIEN','PROCHAINE ÉCHÉANCE','STATUT'];
   const rr=tasks.map(t=>[t.comp,t.loc||'',cLabel(t.crit),t.type,t.prod||'',t.freq,getTechName(t.techId),fmtD(t.date),sLabel(getStatus(t))]);
   const wsR=buildSimpleSheet(lib,rh,rr,8);
   wsR['!cols']=[{wch:22},{wch:16},{wch:12},{wch:10},{wch:25},{wch:14},{wch:18},{wch:14},{wch:14}];
   lib.utils.book_append_sheet(wb,wsR,'Base_Equipements');
-
   const allG=tasks.filter(t=>t.type==='Graisse'),allH=tasks.filter(t=>t.type==='Huile');
   if(allG.length)buildColoredWeeklySheet(lib,wb,allG,weeks,calYear,cw,`Planning_Graissage_${calYear}`,'G');
   if(allH.length)buildColoredWeeklySheet(lib,wb,allH,weeks,calYear,cw,`Planning_Vidange_${calYear}`,'V');
-
   lib.writeFile(wb,`LubriPlan_Planning_Complet_${calYear}.xlsx`);
   toast('📊 Planning complet téléchargé');
 }
@@ -572,8 +634,8 @@ function buildTechView(){
   const techs=users.filter(u=>u.role==='tech'&&u.active);
   if(!techs.length)return`<div class="empty"><div class="empty-icon">👷</div><p>Aucun technicien</p></div>`;
   const cards=techs.map(u=>{
-    const tl=tasks.filter(t=>t.techId===u.id).sort((a,b)=>a.crit-b.crit),dn=tl.filter(t=>t.done).length,pct=tl.length?Math.round(dn/tl.length*100):0;
-    const tr2=tl.map(t=>{const si=tasks.indexOf(t),s=getStatus(t),cc=isAdmin()||t.techId===currentUser.id;return`<div class="tech-task"><span class="badge ${cClass(t.crit)}" style="font-size:10px;padding:1px 5px">${t.crit}</span><span class="tech-task-name">${esc(t.comp.substring(0,25))}${t.comp.length>25?'…':''}</span><span class="badge ${sClass(s)}" style="font-size:10px">${sLabel(s)}</span><input type="checkbox" ${t.done?'checked':''} ${cc?'':'disabled'} onchange="toggleDone(${si},this)"/></div>`;}).join('');
+    const tl=tasks.filter(t=>t.techId===u.id).sort((a,b)=>a.crit-b.crit),dn=tl.filter(t=>isCycleDone(t)).length,pct=tl.length?Math.round(dn/tl.length*100):0;
+    const tr2=tl.map(t=>{const si=tasks.indexOf(t),s=getStatus(t),cc=isAdmin()||t.techId===currentUser.id;return`<div class="tech-task"><span class="badge ${cClass(t.crit)}" style="font-size:10px;padding:1px 5px">${t.crit}</span><span class="tech-task-name">${esc(t.comp.substring(0,25))}${t.comp.length>25?'…':''}</span><span class="badge ${sClass(s)}" style="font-size:10px">${sLabel(s)}</span><input type="checkbox" ${isCycleDone(t)?'checked':''} ${cc?'':'disabled'} onchange="toggleDone(${si},this)"/></div>`;}).join('');
     return`<div class="tech-card"><div class="tech-card-header"><div class="tech-av">${initials(u.name)}</div><div><div class="tech-name">${esc(u.name)}</div><div class="tech-count">${u.spec||''} — ${tl.length} tâche${tl.length>1?'s':''}</div></div></div><div class="tech-tasks">${tr2||'<div style="padding:10px 16px;font-size:12px;color:var(--text3)">Aucune tâche assignée</div>'}</div><div class="tech-prog"><div class="tech-prog-label"><span>Progression</span><span>${pct}%</span></div><div class="prog-bar" style="height:6px"><div class="prog-fill" style="width:${pct}%"></div></div></div></div>`;
   }).join('');
   return`<div class="tech-grid">${cards}</div>`;
@@ -591,7 +653,7 @@ function buildHistView(){
   const bT={H:all.filter(({t})=>t.type==='Huile').length,G:all.filter(({t})=>t.type==='Graisse').length};
   const sb=`<div class="hist-stats-bar"><div class="hist-stat-item"><div class="hist-stat-val">${ti}</div><div class="hist-stat-lbl">Total interventions</div></div><div class="hist-stat-sep"></div><div class="hist-stat-item"><div class="hist-stat-val" style="color:var(--green)">${tm}</div><div class="hist-stat-lbl">Ce mois-ci</div></div><div class="hist-stat-sep"></div><div class="hist-stat-item"><div class="hist-stat-val" style="color:#3182CE">${bT.H}</div><div class="hist-stat-lbl">Vidanges huile</div></div><div class="hist-stat-sep"></div><div class="hist-stat-item"><div class="hist-stat-val" style="color:#D69E2E">${bT.G}</div><div class="hist-stat-lbl">Graissages</div></div></div>`;
   const rows=all.map(({d,t},idx)=>{
-    const bg=idx%2===0?'#f8fafc':'#fff',tc=t.type==='Huile'?'#3182CE':'#D69E2E',tbg=t.type==='Huile'?'#EBF8FF':'#FFFFF0',cc=({1:'#E53E3E',2:'#DD6B20',3:'#D69E2E',4:'#38A169'})[t.crit]||'#718096';
+    const bg=idx%2===0?'#f8fafc':'#fff',tc=t.type==='Huile'?'#3182CE':'#D69E2E',tbg=t.type==='Huile'?'#EBF8FF':'#FFFFF0',cc=({1:'#E53E3E',2:'#DD6B20',3:'#38A169'})[t.crit]||'#718096';
     return`<tr style="background:${bg};border-bottom:1px solid #e2e8f0"><td style="padding:10px 14px;font-size:12px;font-family:var(--mono);font-weight:600;color:#2d3748;white-space:nowrap;border-right:1px solid #e2e8f0"><div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:#38A169;flex-shrink:0"></div>${fmtD(d)}</div></td><td style="padding:10px 14px;border-right:1px solid #e2e8f0"><div style="font-size:13px;font-weight:700;color:#1a365d">${esc(t.comp)}</div><div style="font-size:11px;color:#718096;margin-top:2px">📍 ${esc(t.loc||'—')}</div></td><td style="padding:10px 14px;border-right:1px solid #e2e8f0"><span style="display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;background:${tbg};color:${tc};border:1px solid ${tc}30">${t.type}</span></td><td style="padding:10px 14px;font-size:12px;color:#4a5568;border-right:1px solid #e2e8f0">${esc(t.prod||'—')}</td><td style="padding:10px 14px;font-size:12px;color:#4a5568;border-right:1px solid #e2e8f0">${esc(t.freq)}</td><td style="padding:10px 14px;font-size:12px;color:#4a5568;border-right:1px solid #e2e8f0">${esc(getTechName(t.techId))}</td><td style="padding:10px 14px"><div style="display:flex;align-items:center;gap:6px"><div style="width:10px;height:10px;border-radius:50%;background:${cc}"></div><span style="font-size:11px;color:${cc};font-weight:600">${cLabel(t.crit)}</span></div></td></tr>`;
   }).join('');
   return`${sb}<div class="tbl-wrap" style="margin-top:16px"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#1a365d"><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;border-right:1px solid #2d4a7a">DATE</th><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;border-right:1px solid #2d4a7a">ÉQUIPEMENT</th><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;border-right:1px solid #2d4a7a">TYPE</th><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;border-right:1px solid #2d4a7a">PRODUIT</th><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;border-right:1px solid #2d4a7a">FRÉQUENCE</th><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;border-right:1px solid #2d4a7a">TECHNICIEN</th><th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase">CRITICITÉ</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -609,8 +671,8 @@ function openDp(si){
   const t=tasks[si],s=getStatus(t);
   document.getElementById('dp-t').textContent=t.comp;
   document.getElementById('dp-s').innerHTML=`<span class="badge ${cClass(t.crit)}">${t.crit} — ${cLabel(t.crit)}</span> &nbsp; <span class="badge ${sClass(s)}">${sLabel(s)}</span>`;
-  const info=[['Type',`<span class="badge ${tClass(t.type)}">${t.type}</span>`],['Référence',esc(t.prod||'—')],['Quantité',esc(t.qty||'—')],['Fréquence',t.freq],['Technicien',esc(getTechName(t.techId))],['Échéance',fmtD(t.date)],['Durée',esc(t.dur||'—')],['Machine',esc(t.loc||'—')]];
-  const hh=(t.hist||[]).filter(d=>d&&d!=='undefined'&&String(d).trim()!=='').map(d=>`<div class="hist-entry">✓ Effectué le ${fmtD(d)}</div>`).join('')||'<div style="font-size:12px;color:var(--text3)">Aucune intervention</div>';
+  const info=[['Type',`<span class="badge ${tClass(t.type)}">${t.type}</span>`],['Référence',esc(t.prod||'—')],['Quantité',esc(t.qty||'—')],['Fréquence',t.freq],['Technicien',esc(getTechName(t.techId))],['Prochaine échéance',fmtD(t.date)],['Durée',esc(t.dur||'—')],['Machine',esc(t.loc||'—')]];
+  const hh=(t.hist||[]).filter(d=>d&&d!=='undefined'&&String(d).trim()!=='').sort((a,b)=>new Date(b)-new Date(a)).map(d=>`<div class="hist-entry">✓ Effectué le ${fmtD(d)}</div>`).join('')||'<div style="font-size:12px;color:var(--text3)">Aucune intervention</div>';
   document.getElementById('dp-b').innerHTML=`<div class="dp-section"><div class="dp-section-title">Informations</div>${info.map(([k,v])=>`<div class="dp-row"><span class="dp-key">${k}</span><span class="dp-val">${v}</span></div>`).join('')}</div>${t.note?`<div class="dp-section"><div class="dp-section-title">Remarques</div><div style="font-size:13px;color:var(--text2);line-height:1.6">${esc(t.note)}</div></div>`:''}<div class="dp-section"><div class="dp-section-title">Historique</div>${hh}</div>`;
   document.getElementById('dp-f').innerHTML=isAdmin()?`<button class="btn btn-s" style="flex:1" onclick="openTaskModal(${si});closeDp()">✏ Modifier</button><button class="btn btn-d" style="flex:1" onclick="delTask(${si})">🗑 Supprimer</button>`:'';
   document.getElementById('dpOverlay').classList.add('open');document.getElementById('dpPanel').classList.add('open');
@@ -635,7 +697,7 @@ function updProdLbl(){const v=document.getElementById('fType')?.value;if(!v)retu
 function saveTask(){
   const comp=document.getElementById('fComp').value.trim(),date=document.getElementById('fDate').value;
   if(!comp){toast('Nom du composant requis','err');return;}if(!date){toast('Date requise','err');return;}
-  const t={id:editTaskIdx>=0?tasks[editTaskIdx].id:nextTaskId(),comp,prod:document.getElementById('fProd').value.trim(),crit:+document.getElementById('fCrit').value,type:document.getElementById('fType').value,qty:document.getElementById('fQty').value.trim(),freq:document.getElementById('fFreq').value,date,techId:+document.getElementById('fTech').value||null,dur:document.getElementById('fDur').value.trim(),loc:document.getElementById('fLoc').value.trim(),note:document.getElementById('fNote').value.trim(),done:editTaskIdx>=0?tasks[editTaskIdx].done:false,hist:editTaskIdx>=0?tasks[editTaskIdx].hist:[]};
+  const t={id:editTaskIdx>=0?tasks[editTaskIdx].id:nextTaskId(),comp,prod:document.getElementById('fProd').value.trim(),crit:+document.getElementById('fCrit').value,type:document.getElementById('fType').value,qty:document.getElementById('fQty').value.trim(),freq:document.getElementById('fFreq').value,date,techId:+document.getElementById('fTech').value||null,dur:document.getElementById('fDur').value.trim(),loc:document.getElementById('fLoc').value.trim(),note:document.getElementById('fNote').value.trim(),done:false,hist:editTaskIdx>=0?tasks[editTaskIdx].hist:[]};
   if(editTaskIdx>=0)tasks[editTaskIdx]=t;else tasks.push(t);
   saveTasks();closeTaskModal();toast(editTaskIdx>=0?'Tâche modifiée ✓':'Tâche ajoutée ✓');render();
 }
@@ -666,22 +728,29 @@ function toggleUserActive(i){users[i].active=!users[i].active;saveUsers();toast(
 function delUser(i){showCf('Supprimer',`Supprimer <strong>${esc(users[i].name)}</strong> ?`,()=>{users.splice(i,1);saveUsers();toast('Supprimé','warn');render();});}
 
 // ── ACTIONS ──
+// Cocher dans la liste = effectuer l'occurrence due → l'échéance roule selon la fréquence
 function toggleDone(si,el){
   const t=tasks[si];
-  if(!isAdmin()&&t.techId!==currentUser.id){el.checked=t.done;toast('Vous ne pouvez cocher que vos tâches','err');return;}
-  t.done=el.checked;
-  if(el.checked){const d=today();t.hist.push(d);toast(`✓ Tâche marquée effectuée le ${fmtD(d)}`);}
-  else toast('Tâche réouverte','warn');
+  if(!isAdmin()&&t.techId!==currentUser.id){el.checked=isCycleDone(t);toast('Vous ne pouvez cocher que vos tâches','err');return;}
+  if(el.checked){
+    const occ=t.date;
+    t.hist.push(occ);
+    t.date=addIntervalISO(occ,t.freq);
+    toast(`✓ Effectué le ${fmtD(occ)} — prochaine échéance ${fmtD(t.date)}`);
+  }else{
+    const h=(t.hist||[]).filter(Boolean);
+    if(h.length){const last=h.reduce((a,b)=>a>b?a:b);const idx=t.hist.lastIndexOf(last);if(idx>=0)t.hist.splice(idx,1);t.date=last;}
+    toast('Intervention annulée','warn');
+  }
   saveTasks();render();
 }
-function delTask(si){closeDp();showCf('Supprimer la tâche',`Supprimer <strong>${esc(tasks[si].comp)}</strong> ?`,()=>{tasks.splice(si,1);saveTasks();toast('Supprimée','warn');render();});}
-function resetDone(){showCf('Nouvelle période','Remettre toutes les tâches en Planifié ?',()=>{tasks.forEach(t=>t.done=false);saveTasks();toast('Période réinitialisée');render();});}
+function delTask(si){closeDp();showCf('Supprimer la tâche',`Supprimer <strong>${esc(tasks[si].comp)}</strong> ?`,()=>{const id=tasks[si].id;selectedTasks.delete(id);tasks.splice(si,1);saveTasks();toast('Supprimée','warn');render();});}
 
 // ── EXPORT CSV ──
 function q(s){return'"'+String(s||'').replace(/"/g,'""')+'"';}
 function exportCSV(){
-  const h=['ID','Composant','Machine','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Durée','Remarques','Effectué','Historique'];
-  const rows=tasks.map(t=>[t.id,q(t.comp),q(t.loc||''),t.crit,t.type,q(t.prod),q(t.qty||''),t.freq,q(getTechName(t.techId)),t.date,q(t.dur||''),q(t.note||''),t.done?'Oui':'Non',(t.hist||[]).filter(d=>d&&d!=='undefined').join(';')]);
+  const h=['ID','Composant','Machine','Criticité','Type','Produit','Quantité','Fréquence','Technicien','Échéance','Durée','Remarques','Historique'];
+  const rows=tasks.map(t=>[t.id,q(t.comp),q(t.loc||''),t.crit,t.type,q(t.prod),q(t.qty||''),t.freq,q(getTechName(t.techId)),t.date,q(t.dur||''),q(t.note||''),(t.hist||[]).filter(d=>d&&d!=='undefined').join(';')]);
   const csv=[h,...rows].map(r=>r.join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
   a.download=`lubriplan_${today()}.csv`;a.click();toast('Export CSV téléchargé');
@@ -691,10 +760,10 @@ function exportCSV(){
 function exportXLSX(){
   const lib=xlsxLib();if(!lib){toast('Bibliothèque Excel non chargée','err');return;}
   const wb=lib.utils.book_new();
-  const h=['ID','COMPOSANT','MACHINE','CRITICITÉ','TYPE','PRODUIT','QUANTITÉ','FRÉQUENCE','TECHNICIEN','PROCHAINE ÉCHÉANCE','DURÉE','REMARQUES','EFFECTUÉ','HISTORIQUE'];
-  const rows=tasks.map(t=>[t.id,t.comp,t.loc||'',cLabel(t.crit),t.type,t.prod||'',t.qty||'',t.freq,getTechName(t.techId),fmtD(t.date),t.dur||'',t.note||'',t.done?'Oui':'Non',(t.hist||[]).filter(d=>d&&d!=='undefined').map(fmtD).filter(d=>d!=='—').join(' | ')]);
+  const h=['ID','COMPOSANT','MACHINE','CRITICITÉ','TYPE','PRODUIT','QUANTITÉ','FRÉQUENCE','TECHNICIEN','PROCHAINE ÉCHÉANCE','DURÉE','REMARQUES','HISTORIQUE'];
+  const rows=tasks.map(t=>[t.id,t.comp,t.loc||'',cLabel(t.crit),t.type,t.prod||'',t.qty||'',t.freq,getTechName(t.techId),fmtD(t.date),t.dur||'',t.note||'',(t.hist||[]).filter(d=>d&&d!=='undefined').map(fmtD).filter(d=>d!=='—').join(' | ')]);
   const ws=buildSimpleSheet(lib,h,rows,-1);
-  ws['!cols']=[5,22,16,12,10,25,10,14,18,14,10,30,10,22].map(w=>({wch:w}));
+  ws['!cols']=[5,22,16,12,10,25,10,14,18,14,10,30,22].map(w=>({wch:w}));
   lib.utils.book_append_sheet(wb,ws,'Tâches');
   lib.writeFile(wb,`LubriPlan_Export_${today()}.xlsx`);
   toast('📊 Export Excel téléchargé');
@@ -715,13 +784,12 @@ function importXLSXfile(file){
         const get=(keys)=>{for(const k of keys){const idx=hdr.findIndex(h=>h.includes(k));if(idx>=0&&row[idx]!==undefined&&row[idx]!=='')return String(row[idx]).trim();}return'';};
         const pd=(val)=>{if(!val)return today();if(typeof val==='number'){const d=new Date(Math.round((val-25569)*86400*1000));return d.toISOString().split('T')[0];}const s=String(val).trim();if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){const[dd,mm,yyyy]=s.split('/');return`${yyyy}-${mm}-${dd}`;}if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;return today();};
         const comp=get(['composant','équipement','equipement','component','nom','machine']);if(!comp)return;
-        const crit=Math.min(4,Math.max(1,parseInt(get(['criticité','criticite','crit']))||3));
+        const crit=Math.min(3,Math.max(1,parseInt(get(['criticité','criticite','crit']))||2));
         const tr=get(['type']);const type=tr.toLowerCase().includes('graisse')?'Graisse':'Huile';
         const fr=get(['fréquence','frequence','freq']);const fm={'hebdo':'Hebdomadaire','mensuel':'Mensuelle','bimest':'Bimestrielle','trimest':'Trimestrielle','semest':'Semestrielle','annuel':'Annuelle'};
         let freq='Trimestrielle';for(const[k,v]of Object.entries(fm)){if(fr.toLowerCase().includes(k)){freq=v;break;}}
         const date=pd(get(['échéance','echeance','date','prochaine']));
-        const dr=get(['effectué','effectue','fait','done','statut']);const done=['oui','yes','1','true'].includes(dr.toLowerCase());
-        tasks.push({id:nextTaskId(),comp,crit,type,prod:get(['produit','référence','reference','réf','ref','lubrifiant']),qty:get(['quantité','quantite','qty']),freq,date,techId:null,dur:get(['durée','duree','dur']),loc:get(['localisation','local','emplacement','zone','lieu','machine']),note:get(['remarque','note','commentaire']),done,hist:done?[today()]:[]});
+        tasks.push({id:nextTaskId(),comp,crit,type,prod:get(['produit','référence','reference','réf','ref','lubrifiant']),qty:get(['quantité','quantite','qty']),freq,date,techId:null,dur:get(['durée','duree','dur']),loc:get(['localisation','local','emplacement','zone','lieu','machine']),note:get(['remarque','note','commentaire']),done:false,hist:[]});
         count++;
       });
       saveTasks();toast(`✓ ${count} tâche(s) importée(s)`);render();
@@ -733,7 +801,7 @@ function importCSVfile(file){
   const reader=new FileReader();
   reader.onload=ev=>{
     const lines=ev.target.result.split('\n').slice(1).filter(l=>l.trim());let count=0;
-    lines.forEach(line=>{const cols=line.split(',').map(x=>x.replace(/^"|"$/g,'').replace(/""/g,'"'));if(cols.length<9)return;tasks.push({id:nextTaskId(),comp:cols[1],crit:+cols[2]||1,type:cols[3]||'Huile',prod:cols[4],qty:cols[5],freq:cols[6],techId:null,date:cols[8],loc:cols[9]||'',dur:cols[10]||'',note:cols[11]||'',done:cols[12]==='Oui',hist:(cols[13]||'').split(';').filter(d=>d&&d!=='undefined')});count++;});
+    lines.forEach(line=>{const cols=line.split(',').map(x=>x.replace(/^"|"$/g,'').replace(/""/g,'"'));if(cols.length<9)return;tasks.push({id:nextTaskId(),comp:cols[1],crit:Math.min(3,+cols[2]||2),type:cols[3]||'Huile',prod:cols[4],qty:cols[5],freq:cols[6],techId:null,date:cols[8],loc:cols[9]||'',dur:cols[10]||'',note:cols[11]||'',done:false,hist:(cols[12]||'').split(';').filter(d=>d&&d!=='undefined')});count++;});
     saveTasks();toast(`✓ ${count} tâche(s) importée(s)`);render();
   };
   reader.readAsText(file);
@@ -758,6 +826,5 @@ document.addEventListener('keydown',e=>{
     else closeDp();
   }
 });
-
 
 
