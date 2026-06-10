@@ -1,9 +1,3 @@
-// LubriPlan — app.js (version modifiée)
-// ✅ Sélection multiple + suppression groupée
-// ✅ Complétion PAR OCCURRENCE (une date cochée ≠ toute la ligne)
-// ✅ Échéance roulante : cocher une date recalcule la prochaine échéance selon la fréquence
-// ✅ Criticité sur 3 niveaux
-// ✅ Synchronisation cloud optionnelle (Supabase) → mêmes données sur tous les navigateurs
 
 const LS_TASKS='lubriplan_tasks';
 const LS_USERS='lubriplan_users';
