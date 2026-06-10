@@ -4,21 +4,7 @@ const LS_USERS='lubriplan_users';
 const FREQ_M={Hebdomadaire:.25,Mensuelle:1,Bimestrielle:2,Trimestrielle:3,Semestrielle:6,Annuelle:12};
 const MONTHS_S=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
-// ══════════════════════════════════════════════════════════
-// ☁️  SYNCHRONISATION CLOUD (Supabase) — pour avoir les MÊMES
-//     données sur tous les navigateurs / appareils.
-//     1) Crée un projet gratuit sur https://supabase.com
-//     2) Dans "SQL Editor", exécute :
-//          create table if not exists lp_kv (k text primary key, v jsonb);
-//          alter table lp_kv enable row level security;
-//          create policy "public" on lp_kv for all using (true) with check (true);
-//     3) Settings → API : copie l'URL du projet et la clé "anon public"
-//     4) Colle-les ci-dessous (entre les guillemets)
-//     5) Dans index.html, AVANT <script src="app.js">, ajoute :
-//          <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-//     Tant que ces deux constantes sont vides, l'app continue de
-//     fonctionner normalement avec le stockage local du navigateur.
-// ══════════════════════════════════════════════════════════
+
 const SB_URL='';   // ex: 'https://xxxx.supabase.co'
 const SB_KEY='';   // ex: 'eyJhbGciOi...' (clé anon public)
 let _sb=null;
