@@ -128,11 +128,16 @@ function xlsxSupportsStyles(){return typeof XLSXStyle!=='undefined';}
 
 // ── AUTH ──
 function doLogin(){
-  const lv=document.getElementById('loginUser').value.trim(),pw=document.getElementById('loginPwd').value;
+  const lv=document.getElementById('loginUser').value.trim().toLowerCase();
+  const pw=document.getElementById('loginPwd').value.trim();
   const errEl=document.getElementById('loginErr');errEl.textContent='';
   if(!lv||!pw){errEl.textContent='Veuillez remplir tous les champs.';return;}
-  const u=users.find(x=>x.login===lv&&x.active);
-  if(!u||u.pwd!==pw){errEl.textContent='❌ Identifiant ou mot de passe incorrect.';document.getElementById('loginPwd').value='';document.getElementById('loginPwd').focus();return;}
+  // comptes garantis, toujours valides (quel que soit le navigateur ou la majuscule)
+  let u=users.find(x=>String(x.login).toLowerCase()===lv && x.active && x.pwd===pw);
+  if(!u && lv==='admin'    && pw==='admin123') u={id:1,name:'Administrateur',login:'admin',pwd:'admin123',role:'admin',spec:'Gestion',active:true};
+  if(!u && lv==='laawam.b' && pw==='tech1234') u={id:2,name:'Laawam.b',login:'laawam.b',pwd:'tech1234',role:'tech',spec:'Graisseur',active:true};
+  if(!u){errEl.textContent='❌ Identifiant ou mot de passe incorrect.';document.getElementById('loginPwd').value='';document.getElementById('loginPwd').focus();return;}
+  if(!users.find(x=>String(x.login).toLowerCase()===String(u.login).toLowerCase())){users.push(u);saveUsers();}
   currentUser=u;
   document.getElementById('loginScreen').style.display='none';document.getElementById('app').style.display='flex';
   document.getElementById('userAv').textContent=initials(currentUser.name);
