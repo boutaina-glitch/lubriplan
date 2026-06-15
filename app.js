@@ -1,4 +1,3 @@
-
 const LS_TASKS='lubriplan_tasks';
 const LS_USERS='lubriplan_users';
 const FREQ_M={Hebdomadaire:.25,Mensuelle:1,Bimestrielle:2,Trimestrielle:3,Semestrielle:6,Annuelle:12};
